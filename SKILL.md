@@ -1,125 +1,199 @@
 ---
 name: dual-agent-loop
 description: >-
-  End-to-end dual-agent software engineering workflow for a Project Lead + Chief Engineer pair.
-  Covers requirements refinement, architecture, walking-skeleton bootstrapping, domain implementation,
-  interface/UI integration, baseline-vs-HEAD regression attribution gates (HEAD-ONLY = 0),
-  visual evidence handling, and CDP-based reporting. Designed to adapt across web, backend,
-  CLI, mobile, and game projects with project-specific tooling.
+  Reviewable dual-agent software engineering workflow for a Project Lead + Chief Engineer pair.
+  Coordinates bounded directives, durable run/batch state, implementation, evidence collection,
+  strict baseline-vs-HEAD regression attribution, and independent review. Includes an experimental
+  browser CDP transport; project-specific tools and approved transports should be used where appropriate.
 ---
 
 # Dual-Agent Engineering Loop
 
-This skill operationalizes a **reviewable dual-agent software engineering workflow** from an initial product idea through implementation, evidence collection, review gates, and release preparation.
+Use this skill when a project intentionally separates:
 
-It coordinates:
+- **Project Lead** — requirements, architecture, batch scope, acceptance criteria, review, verdicts;
+- **Chief Engineer** — repository inspection, implementation, automated verification, evidence collection, and handoff.
 
-- an external **Project Lead Agent** (planning, architecture, requirements decomposition, review, acceptance gates), and
-- a local **Chief Engineer Agent** (repository inspection, bounded implementation, automated test execution, regression attribution, evidence collection, and CDP reporting).
-
-The intent is not to claim that one workflow automatically solves every software project. The lifecycle is designed to generalize across web, backend, CLI, mobile, and game development, while each project still supplies the correct stack-specific build, test, screenshot, packaging, and release tools.
-
-本技能是一套**双 Agent 闭环软件研发工作流**。Project Lead 负责需求、架构和验收；Chief Engineer 负责仓库修改、测试、证据收集和汇报。它可以适配 Web、后端、CLI、移动端和游戏等项目，但具体工具链与验收门禁必须根据真实项目技术栈配置。
+The purpose is not to make the coding agent maximally autonomous. The purpose is to make each batch **bounded, recoverable, evidence-backed, and independently reviewed**.
 
 ---
 
-## 1. Dual-Agent Architecture
+## 1. Role boundary
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Project Lead Agent (ChatGPT / Claude Web)                  │
-│  • Refines requirements and architecture                                  │
-│  • Defines bounded directives and acceptance criteria                      │
-│  • Reviews tests, logs, diffs, screenshots, and other evidence            │
-│  • Approves, rejects, freezes, or reopens surfaces                         │
-└────────────────────────────────────┬────────────────────────────────────────┘
-                                     │ ▲
-                 Directive / Review  │ │ Evidence Pack via CDP
-                                     ▼ │
-┌────────────────────────────────────┴────────────────────────────────────────┐
-│                  Chief Engineer Agent (Local Coding Agent)                 │
-│  • Inspects repository and toolchain                                       │
-│  • Locks batch scope and BASE SHA                                           │
-│  • Implements the smallest compliant change                                │
-│  • Runs project-appropriate automated checks                               │
-│  • Computes baseline-vs-HEAD regression attribution                         │
-│  • Collects runtime / visual evidence                                       │
-│  • Reports results through the CDP bridge                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+### Project Lead
+
+The Lead:
+
+- refines ambiguous requirements;
+- defines explicit GOAL / NON-GOALS / ACCEPTANCE criteria;
+- decides architecture and contract changes;
+- reviews evidence rather than trusting completion claims;
+- may mark accepted interfaces or UI surfaces as `FROZEN`;
+- returns a batch verdict such as PASS / REJECT / BLOCKED / CLOSED.
+
+### Chief Engineer
+
+The Engineer:
+
+- inspects the actual repository and environment before modifying code;
+- records the baseline SHA and current batch directive;
+- implements the smallest compliant change;
+- runs stack-appropriate checks;
+- produces machine-readable evidence where practical;
+- does not silently delete/skip tests to make a gate green;
+- does not self-approve product quality.
+
+---
+
+## 2. Durable run state is mandatory for multi-batch work
+
+For a new run, initialize:
+
+```bash
+python scripts/run_state.py \
+  --state .dual-agent-loop/run-state.json \
+  init --phase phase-0 --project <project-name> --base-sha <BASE_SHA>
 ```
 
+The ledger stores at least:
+
+```text
+run_id
+phase
+batch_id
+status
+base_sha
+head_sha
+directive
+evidence
+verdict
+history
+```
+
+For each new bounded directive:
+
+```bash
+python scripts/run_state.py \
+  directive --id <DIRECTIVE_ID> --base-sha <BASE_SHA> --text "<directive summary>"
+```
+
+Update status/evidence/verdict as the batch progresses. If a terminal or browser restarts, inspect the ledger before continuing instead of reconstructing state from memory.
+
+The ledger is not a full orchestrator. It is the durable handoff record.
+
 ---
 
-## 2. Five Lifecycle Phases
+## 3. Standard batch loop
 
-| Phase | Project Lead | Chief Engineer | Typical gate |
-| --- | --- | --- | --- |
-| **0. Charter & Architecture** | Refine scope, constraints, architecture, contracts, acceptance criteria | Inspect repository, environment, available tooling | Architecture and scope approved |
-| **1. Walking Skeleton** | Define the first runnable milestone | Build the smallest runnable skeleton and establish test baseline | Smoke path works and baseline is captured |
-| **2. Domain Logic** | Define business rules and edge cases | Implement bounded domain logic behind testable boundaries | Required domain tests pass; HEAD-ONLY regressions = 0 |
-| **3. Presentation & Integration** | Define API / CLI / UI acceptance criteria | Integrate presentation layers and collect runtime evidence | Integration/visual evidence reviewed |
-| **4. Hardening & Release** | Define project-specific hardening and release checklist | Run appropriate stress/simulation/package/release checks | No unresolved release-blocking defects |
+1. **Recover / initialize state**  
+   Read `.dual-agent-loop/run-state.json` if present. Confirm current phase, batch, directive, base SHA, and prior verdict.
 
-Do not force identical hardening methods across unrelated project types. For example, a CLI, mobile app, web service, and game may require very different Phase 4 evidence.
+2. **Lock directive and non-goals**  
+   Do not start implementation until the batch goal and acceptance criteria are unambiguous enough to test/review.
 
----
+3. **Check contracts and frozen surfaces**  
+   Identify accepted API/UI/schema/behavior surfaces. Do not modify a frozen surface unless the current Lead directive explicitly reopens it.
 
-## 3. Standard Batch Loop
+4. **Implement the smallest compliant change**  
+   Avoid unrelated refactors and speculative abstractions unless they are necessary for correctness.
 
-1. **Directive Locking**  
-   Record the current BASE SHA, batch goal, explicit non-goals, affected surfaces, and acceptance criteria.
+5. **Run project-specific verification**  
+   Execute the real build/test/lint/integration/runtime commands appropriate to the repository.
 
-2. **Contract / Freeze Check**  
-   Identify whether the batch touches an accepted or `FROZEN` interface, UI surface, schema, or behavior.
+6. **Run strict regression attribution when comparable reports exist**  
+   Use `scripts/compare_attribution.py` with baseline and HEAD NUnit/JUnit-family XML.
 
-3. **Minimal Implementation**  
-   Implement only what the current directive requires. Avoid speculative abstractions or unrelated refactors unless necessary for correctness.
-
-4. **Automated Verification + Regression Attribution**  
-   Run the project-specific test command. When baseline and HEAD test reports are available, use `scripts/compare_attribution.py` and require:
+   The default strict gate blocks:
 
    ```text
-   HEAD-ONLY Failures = Failures(HEAD) - Failures(Baseline) = 0
+   new failures                 > 0
+   changed failure signatures   > 0
+   missing baseline tests       > 0
+   newly skipped tests          > 0
+   duplicate test identifiers   > 0
+   unknown test states          > 0
    ```
 
-   The included parser handles common NUnit-style and JUnit-style XML. Jest, Vitest, Pytest, or other runners can participate when configured to emit compatible JUnit XML.
+   A pre-existing failure is non-blocking only if the same test remains in the inventory and the captured failure signature remains unchanged.
 
-5. **Runtime / Visual Evidence**  
-   For UI or visual projects, use the project's actual runtime tooling to capture screenshots at relevant target sizes. Then use `scripts/capture_screen.py` to inspect image dimensions and format evidence references.
+   Do not describe this as mathematical proof of complete correctness. It is regression-attribution evidence.
 
-6. **Git + CDP Report**  
-   Commit/push according to the target repository's workflow, create an evidence-backed report, and send it to the Project Lead using `scripts/chatgpt_cdp_bridge.py`. Await the Lead's review before declaring the whole project complete.
+7. **Collect runtime / visual evidence where relevant**  
+   The target project must perform the real screenshot/runtime capture. `scripts/capture_screen.py` only inspects and formats existing screenshot evidence.
 
----
+8. **Persist evidence and HEAD SHA**  
+   Record the evidence paths/hashes and update run status before reporting to the Lead.
 
-## 4. Tooling
+9. **Report and await independent verdict**  
+   Send the bounded evidence pack using the configured transport. Record PASS / REJECT / BLOCKED / CLOSED in the state ledger.
 
-- **CDP bridge** — [`scripts/chatgpt_cdp_bridge.py`](./scripts/chatgpt_cdp_bridge.py)  
-  Sends text to a browser-based ChatGPT / Claude conversation and reads the resulting response through Chrome DevTools Protocol. Browser DOM changes can require selector updates.
-
-- **Regression attribution** — [`scripts/compare_attribution.py`](./scripts/compare_attribution.py)  
-  Compares baseline and HEAD test reports and identifies newly introduced failures. Supports common NUnit/JUnit-style XML; other runners should emit compatible JUnit XML.
-
-- **Screenshot evidence inspector** — [`scripts/capture_screen.py`](./scripts/capture_screen.py)  
-  Inspects existing screenshot dimensions and formats evidence references. It does **not** itself launch Playwright, Puppeteer, mobile emulators, or game engines; the target project should provide the real capture mechanism.
-
-- **Lifecycle details** — [`references/LIFECYCLE_STAGES.md`](./references/LIFECYCLE_STAGES.md)
-- **Project initialization guidance** — [`references/PROJECT_INITIALIZER.md`](./references/PROJECT_INITIALIZER.md)
-- **Workflow specification** — [`references/WORKFLOW_SPEC.md`](./references/WORKFLOW_SPEC.md)
-- **Report templates** — [`references/REPORT_TEMPLATES.md`](./references/REPORT_TEMPLATES.md)
-- **Codex / CLI guide** — [`references/CODEX_GUIDE.md`](./references/CODEX_GUIDE.md)
-- **Example evidence packet** — [`examples/sample_report.md`](./examples/sample_report.md)
+10. **Advance only after verdict**  
+    A PASS may unlock the next batch. A REJECT must produce a new bounded corrective batch. Do not silently reinterpret a rejected directive.
 
 ---
 
-## 5. CDP Safety Requirements
+## 4. Five lifecycle phases
 
-When using the browser bridge:
+| Phase | Lead focus | Engineer focus | Typical evidence |
+| --- | --- | --- | --- |
+| **0. Charter & Architecture** | Scope, constraints, architecture, contracts | Environment/repository inspection | Charter, architecture, toolchain findings |
+| **1. Walking Skeleton** | First runnable milestone | Minimal runnable skeleton, first baseline | Smoke result, baseline reports |
+| **2. Domain Logic** | Rules and edge cases | Bounded domain implementation | Unit/integration evidence + strict attribution |
+| **3. Presentation & Integration** | API/CLI/UI acceptance | Integration and runtime evidence | API samples, E2E output, screenshots |
+| **4. Hardening & Release** | Project-specific release bar | Stress/simulation/package/release checks | Release checklist and reproducible artifacts |
 
-1. Launch Chrome with a **dedicated `--user-data-dir`**.
-2. Do not attach the workflow to your everyday Chrome profile.
-3. Do not expose the CDP port to untrusted networks.
-4. Only connect trusted local agents and scripts.
-5. Treat authenticated browser content, cookies, and chat history as sensitive.
+Do not force the same test runner, screenshot method, or stress strategy across unrelated project types.
 
-See [`SECURITY.md`](./SECURITY.md) and the root [`README.md`](./README.md) for current Chrome 136+ launch examples.
+---
+
+## 5. Experimental CDP transport
+
+`scripts/chatgpt_cdp_bridge.py` is an **experimental transport adapter** for a browser-based Lead.
+
+It currently:
+
+- targets an explicit allowed hostname rather than a URL substring;
+- refuses to fall back to unrelated browser tabs;
+- captures a pre-send assistant snapshot;
+- returns only a response detected after the send;
+- supports retry and selector override options.
+
+Requirements:
+
+1. use a dedicated Chrome `--user-data-dir`;
+2. keep CDP local-only;
+3. only automate services/accounts you are authorized to automate;
+4. check the applicable third-party terms/policies;
+5. prefer an approved API/MCP/integration when the environment requires one;
+6. treat selector breakage as a hard failure, not a reason to broaden automation to arbitrary pages.
+
+See `SECURITY.md`.
+
+---
+
+## 6. Repository tools
+
+- `scripts/compare_attribution.py` — strict baseline-vs-HEAD test inventory/state attribution
+- `scripts/run_state.py` — durable run/batch state ledger
+- `scripts/chatgpt_cdp_bridge.py` — experimental browser transport
+- `scripts/capture_screen.py` — screenshot evidence inspector
+- `tests/` — self-tests for the gate, CDP target/response logic, and run state
+- `examples/regression_gate_demo/` — reproducible good/bad attribution fixtures
+- `references/WORKFLOW_SPEC.md` — detailed role/protocol notes
+- `references/PROJECT_INITIALIZER.md` — stack-adaptation guidance
+- `references/REPORT_TEMPLATES.md` — evidence/report structures
+
+---
+
+## 7. Completion rule
+
+A local Engineer may say **implementation complete** only when the requested code change is done and required local checks have run.
+
+The **batch** is not accepted until:
+
+- required evidence is recorded;
+- strict regression blockers are zero where that gate applies;
+- the Lead returns a verdict;
+- the verdict is persisted in the run-state ledger.
+
+The overall project is not automatically “production-ready” merely because one or more batches pass.
