@@ -63,7 +63,6 @@ def _normalize_result(test_case) -> str:
             return "Skipped"
         return raw_result.strip() or "Unknown"
 
-    # JUnit normally expresses state through child elements.
     if _direct_child(test_case, {"failure", "error"}) is not None:
         return "Failed"
     if _direct_child(test_case, {"skipped"}) is not None:
@@ -94,7 +93,6 @@ def _failure_details(test_case):
             if not message:
                 message = body.splitlines()[0][:1000]
 
-    # NUnit often nests message/stack-trace below <failure>.
     nested_message = _first_descendant_text(test_case, {"message"})
     nested_stack = _first_descendant_text(test_case, {"stack-trace", "stacktrace"})
     if nested_message:
@@ -165,7 +163,6 @@ def parse_test_results(xml_path: str):
 
 
 def _failure_signature(info):
-    """Signature used to tell a pre-existing failure from a changed failure."""
     return (info.get("message", "").strip(), info.get("stack", "").strip())
 
 
@@ -223,9 +220,6 @@ def compare_suites(
         if head_state == "Skipped" and base_state != "Skipped":
             new_skips.append(name)
 
-    # A brand-new test that fails is also a HEAD-only failure. A brand-new test
-    # that is skipped is also considered a new skip because it contributes no
-    # verification evidence.
     for name in new_tests:
         state = head["tests"][name]["result"]
         if state == "Failed":
@@ -306,17 +300,17 @@ def compare_suites(
         f"failed={head['failed']} skipped={head['skipped']}"
     )
     print("-" * 64)
-    print(f"New failures:              {len(head_only_failures)}")
-    print(f"Changed failure signatures:{len(changed_failures):>3}")
-    print(f"Missing baseline tests:    {len(missing_tests):>3}")
-    print(f"New skips:                 {len(new_skips):>3}")
-    print(f"Duplicate test IDs:        {len(duplicate_tests):>3}")
+    print(f"New failures:               {len(head_only_failures):>3}")
+    print(f"Changed failure signatures: {len(changed_failures):>3}")
+    print(f"Missing baseline tests:     {len(missing_tests):>3}")
+    print(f"New skips:                  {len(new_skips):>3}")
+    print(f"Duplicate test IDs:         {len(duplicate_tests):>3}")
     print(
-        f"Unknown states:            "
+        f"Unknown states:             "
         f"{len(base['unknown_states']) + len(head['unknown_states']):>3}"
     )
-    print(f"Fixed baseline failures:   {len(fixed_failures):>3}")
-    print(f"New tests discovered:      {len(new_tests):>3}")
+    print(f"Fixed baseline failures:    {len(fixed_failures):>3}")
+    print(f"New tests discovered:       {len(new_tests):>3}")
     print("-" * 64)
     print("GATE:", "PASS" if result["gate_pass"] else f"FAIL ({blocker_count} blocker(s))")
 
@@ -332,6 +326,11 @@ def main():
     parser.add_argument("--base-sha", help="Optional baseline Git commit SHA")
     parser.add_argument("--head-sha", help="Optional HEAD Git commit SHA")
     parser.add_argument("--runner", help="Optional test-runner identifier/version")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Compatibility flag; strict mode is already the default",
+    )
     parser.add_argument(
         "--no-strict",
         action="store_true",
