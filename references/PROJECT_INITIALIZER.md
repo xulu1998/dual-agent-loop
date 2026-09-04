@@ -1,61 +1,82 @@
-# Universal Project Initializer & Templates (通用项目初始化与适配指南)
+# Project Initializer and Verification Adapters
 
-本指南指导工程师 Agent 如何根据 Project Lead 的架构指令，对不同领域的编程项目建立起**自动化测试与验证骨架**。
+This guide shows how a Chief Engineer can map `dual-agent-loop` onto different software stacks. The workflow is shared; the actual build/test/runtime tools remain project-specific.
 
----
+## 1. Web applications
 
-## 1. Web 全栈项目 (Next.js / React / Vue + Node.js / FastAPI / Go)
+Typical tools:
 
-### 验证管线标准：
-- **测试框架**：`vitest` / `jest` / `pytest`
-- **E2E 与视觉审查**：`playwright` (无头浏览器模式，支持直接截图 720×1280 与 1440×2560)
-- **A/B 归因门禁命令示例**：
-  ```bash
-  # 运行并生成 JUnit 格式测试结果
-  npm test -- --reporter=junit --outputFile=builds/head-tests.xml
-  
-  # A/B 门禁对比
-  python3 scripts/compare_attribution.py --baseline builds/baseline-tests.xml --head builds/head-tests.xml --strict
-  ```
-- **Playwright 视觉截图规范**：
-  ```javascript
-  // 自动化视觉审查脚本 (e.g. tests/visual.spec.ts)
-  await page.setViewportSize({ width: 720, height: 1280 });
-  await page.screenshot({ path: 'builds/screen-720x1280.png' });
-  await page.setViewportSize({ width: 1440, height: 2560 });
-  await page.screenshot({ path: 'builds/screen-1440x2560.png' });
-  ```
+- unit/integration: Vitest / Jest / Pytest / framework-native runner
+- E2E/visual capture: Playwright / Puppeteer
+- regression attribution: configure the test runner to emit JUnit-compatible XML
 
----
+Example:
 
-## 2. 后端服务与微服务 (Go / Rust / Python / Java Spring)
+```bash
+npm test -- --reporter=junit --outputFile=artifacts/head-tests.xml
+python scripts/compare_attribution.py \
+  --baseline artifacts/baseline-tests.xml \
+  --head artifacts/head-tests.xml \
+  --base-sha <BASE_SHA> \
+  --head-sha <HEAD_SHA> \
+  --runner "vitest" \
+  --json artifacts/attribution.json
+```
 
-### 验证管线标准：
-- **测试框架**：`go test` / `cargo test` / `pytest`
-- **长期压测与模拟**：`k6` / `locust` / 自动化内存与并发死锁检测
-- **输出标准**：通过 `go-junit-report` 或 `cargo2junit` 转换为通用 XML 进行 A/B 比对。
-- **验证命令示例**：
-  ```bash
-  # Go 示例
-  go test -v ./... | go-junit-report > builds/head-tests.xml
-  python3 scripts/compare_attribution.py --baseline builds/baseline-tests.xml --head builds/head-tests.xml --strict
-  ```
+Example Playwright capture (the target project owns the capture code):
 
----
+```javascript
+await page.setViewportSize({ width: 720, height: 1280 });
+await page.screenshot({ path: 'artifacts/screen-720x1280.png' });
+```
 
-## 3. CLI 命令行与系统级工具 (Rust / C++ / Python / Go)
+Use target sizes that matter to the real application; 720×1280 / 1440×2560 are examples, not universal requirements.
 
-### 验证管线标准：
-- **CLI 行为测试**：针对标准输入、标准输出、退出码、异常参数编写确定性集成用例。
-- **多平台验证**：针对跨平台文件路径、终端宽度做格式适配检查。
+## 2. Backend services
 
----
+Typical tools:
 
-## 4. 客户端与游戏 (Unity / Tuanjie / Unreal / Godot / Flutter)
+- Go: `go test`, optionally converted with `go-junit-report`
+- Rust: `cargo test` plus a JUnit adapter when attribution is required
+- Python: `pytest --junitxml=...`
+- Java: native JUnit XML from Maven/Gradle test tooling
+- load/stress: k6, Locust, project-specific harnesses
 
-### 验证管线标准：
-- **无头批量模式 (Headless Batchmode)**：
-  - Unity / Tuanjie: `-batchmode -runTests -testPlatform EditMode/PlayMode`
-  - Godot: `--headless --run-tests`
-- **实机分辨率取证**：
-  通过 `ScreenCapture.CaptureScreenshot` 在标准分辨率下采样，保存至 `builds/` 供 Lead 审查。
+The strict attribution gate blocks more than new failures. It also blocks missing baseline tests, new skips, changed failure signatures, duplicate IDs, and unknown states.
+
+## 3. CLI / systems tools
+
+Verification should cover the behavior that matters to the CLI:
+
+- stdout/stderr
+- exit codes
+- invalid arguments
+- filesystem side effects
+- cross-platform paths/encodings where relevant
+- deterministic integration scenarios
+
+If the runner can emit JUnit/NUnit-family XML, it can feed the attribution gate. If not, use native project checks and record their evidence rather than inventing unsupported XML.
+
+## 4. Mobile / game projects
+
+Examples:
+
+- Unity / Tuanjie: batchmode test execution and engine-owned screenshot capture
+- Godot: project-supported headless testing/runtime capture
+- Flutter: `flutter test` / integration_test with project-specific reporting
+- native mobile: platform test runners and emulator/device evidence
+
+The repository's `capture_screen.py` does not launch engines or emulators. It only inspects screenshot files already produced by the target project's real tooling.
+
+## 5. Baseline discipline
+
+Before relying on regression attribution:
+
+1. record the actual baseline Git SHA;
+2. generate the baseline report from that designated state;
+3. keep the baseline XML/hash as evidence;
+4. generate HEAD with equivalent runner configuration;
+5. include runner/version when possible;
+6. do not delete or skip tests to reduce blocker counts.
+
+For a self-contained example, run `examples/regression_gate_demo/`.
