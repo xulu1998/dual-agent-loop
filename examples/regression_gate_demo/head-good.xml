@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="demo">
+  <testcase classname="demo.Cart" name="adds_item" />
+  <testcase classname="demo.Cart" name="removes_item" />
+  <testcase classname="demo.Legacy" name="known_failure">
+    <failure message="legacy rounding issue">legacy rounding issue</failure>
+  </testcase>
+  <testcase classname="demo.Cart" name="new_discount_rule" />
+</testsuite>
