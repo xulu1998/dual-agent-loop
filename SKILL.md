@@ -1,88 +1,125 @@
 ---
 name: dual-agent-loop
 description: >-
-  Universal end-to-end software engineering operating system for an autonomous dual-agent pair (Project Lead + Chief Engineer).
-  Covers the full lifecycle from a single-sentence user idea to production-ready delivery: project planning & architecture,
-  walking skeleton bootstrapping, pure domain implementation, interface/UI integration, A/B baseline regression test gates
-  (HEAD-ONLY = 0), multi-resolution visual evidence, and autonomous CDP reporting.
-  Supports ALL software domains: Web full-stack, Backend APIs & microservices, CLI/Systems tools, Mobile apps, and Games.
+  End-to-end dual-agent software engineering workflow for a Project Lead + Chief Engineer pair.
+  Covers requirements refinement, architecture, walking-skeleton bootstrapping, domain implementation,
+  interface/UI integration, baseline-vs-HEAD regression attribution gates (HEAD-ONLY = 0),
+  visual evidence handling, and CDP-based reporting. Designed to adapt across web, backend,
+  CLI, mobile, and game projects with project-specific tooling.
 ---
 
-# Universal Dual-Agent Engineering Loop (通用端到端双 Agent 闭环研发系统)
+# Dual-Agent Engineering Loop
 
-This skill operationalizes a production-grade, universal dual-agent pair programming workflow for **ANY software engineering project**—from a one-line prompt to a fully validated, production-ready deliverable.
+This skill operationalizes a **reviewable dual-agent software engineering workflow** from an initial product idea through implementation, evidence collection, review gates, and release preparation.
 
-It coordinates an external **Project Lead Agent** (planning, architecture, requirements decomposition, visual/code review, acceptance gates) and a local **Chief Engineer Agent** (toolchain bootstrapping, minimal implementation, automated batch test execution, A/B regression attribution, and CDP reporting).
+It coordinates:
 
-本技能是一套**面向所有编程领域（Web全栈、后端服务、CLI工具、移动端App、游戏研发）**的通用端到端自主研发操作系统。它将“用户一句话描述”无缝转化为生产级成品：外部端（ChatGPT/Claude）负责全局规划与严格验收，本地端（Antigravity/CLI）负责脚手架构建、编码实施、双门禁测试与实机取证，实现两端自主闭环、全流程免人工测试。
+- an external **Project Lead Agent** (planning, architecture, requirements decomposition, review, acceptance gates), and
+- a local **Chief Engineer Agent** (repository inspection, bounded implementation, automated test execution, regression attribution, evidence collection, and CDP reporting).
+
+The intent is not to claim that one workflow automatically solves every software project. The lifecycle is designed to generalize across web, backend, CLI, mobile, and game development, while each project still supplies the correct stack-specific build, test, screenshot, packaging, and release tools.
+
+本技能是一套**双 Agent 闭环软件研发工作流**。Project Lead 负责需求、架构和验收；Chief Engineer 负责仓库修改、测试、证据收集和汇报。它可以适配 Web、后端、CLI、移动端和游戏等项目，但具体工具链与验收门禁必须根据真实项目技术栈配置。
 
 ---
 
-## 1. Universal Architecture (通用双 Agent 架构)
+## 1. Dual-Agent Architecture
 
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 Project Lead Agent (ChatGPT / Claude Web)                  │
+│  • Refines requirements and architecture                                  │
+│  • Defines bounded directives and acceptance criteria                      │
+│  • Reviews tests, logs, diffs, screenshots, and other evidence            │
+│  • Approves, rejects, freezes, or reopens surfaces                         │
+└────────────────────────────────────┬────────────────────────────────────────┘
+                                     │ ▲
+                 Directive / Review  │ │ Evidence Pack via CDP
+                                     ▼ │
+┌────────────────────────────────────┴────────────────────────────────────────┐
+│                  Chief Engineer Agent (Local Coding Agent)                 │
+│  • Inspects repository and toolchain                                       │
+│  • Locks batch scope and BASE SHA                                           │
+│  • Implements the smallest compliant change                                │
+│  • Runs project-appropriate automated checks                               │
+│  • Computes baseline-vs-HEAD regression attribution                         │
+│  • Collects runtime / visual evidence                                       │
+│  • Reports results through the CDP bridge                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                        Project Lead Agent (ChatGPT / Claude Web)                       │
-│   • Phase 0: Refines user idea -> Charter, Tech Stack & Architecture                  │
-│   • Phase 1-4: Issues Batch Directives (Strict Goal, Non-goals, Acceptance Criteria)   │
-│   • Reviews Public Code, Automated Test Diffs, and Multi-resolution Visuals           │
-│   • Authorizes Phase Transitions & Grants FROZEN / PASS / CLOSED status                │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ ▲
-               1. Directive (Batch Scope)   │ │ 6. Evidence Pack via CDP Bridge
-                                            ▼ │    (scripts/chatgpt_cdp_bridge.py)
-┌───────────────────────────────────────────┴────────────────────────────────────────────┐
-│                        Chief Engineer Agent (Antigravity / Local CLI)                  │
-│   • Scope & Rules Guard: Enforces zero scope creep, locks Base SHA                     │
-│   • Universal Toolchain: Sets up build/test framework (Web / Backend / CLI / Game)     │
-│   • Minimal Implementation: Pure domain logic isolated from presentation / frameworks  │
-│   • A/B Regression Gate: Batch execution comparing against Baseline XML                │
-│     (Mathematical Gate: HEAD-ONLY Failures == 0)                                       │
-│   • Visual / Runtime Evidence: Multi-resolution headless browser / engine screenshots  │
-│   • Git & Autonomous Delivery: Commits, pushes to branch, dispatches CDP report        │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
 
 ---
 
-## 2. The 5 End-to-End Lifecycle Phases (端到端五阶段研发生命周期)
+## 2. Five Lifecycle Phases
 
-| 阶段 (Phase) | Project Lead 职责 (规划与验收) | Chief Engineer 职责 (实施与测试) | 交付物与流转门禁 (Deliverables & Gates) |
-| :--- | :--- | :--- | :--- |
-| **Phase 0: 需求提炼与架构设计<br>(Charter & Architecture)** | 拆解用户一句话为功能清单、技术选型（Web/Go/Python/Unity 等）与数据契约。 | 校验本地工具链（Node/Go/Python/Docker/Compiler）、初始化代码仓库与基线配置。 | 产出 `PROJECT_CHARTER.md` & `ARCHITECTURE.md`。<br>门禁：Lead 签发 `ARCHITECTURE_APPROVED`。 |
-| **Phase 1: 最小可运行骨架<br>(Walking Skeleton)** | 确立骨架结构、目录组织与初始 Smoke 验收标准。 | 搭建最小可运行 Hello-World，接入自动化测试管线，生成首版 Baseline 测试 XML。 | 产出基础可编译代码与基准测试结果。<br>门禁：`Smoke Test = PASS`，基线 XML 固化。 |
-| **Phase 2: 领域与数据层驱动<br>(Core Domain & Data Logic)** | 制定业务规则书（Rulebook）、算法边界与单测覆盖标准。 | 编写纯领域逻辑（无平台耦合），编写全覆盖单元测试，运行 A/B 归因门禁。 | 核心逻辑代码与单测套件。<br>门禁：`Unit Tests 100% PASS`，`HEAD-ONLY = 0`。 |
-| **Phase 3: 接口与界面集成<br>(API, Presentation & UI)** | 拟定 API Schema、CLI 交互流或 UI 布局设计规范。 | 实现接口层 / UI 视图，运行集成测试，捕获多分辨率实机截图（Web/App/Game）。 | 完整集成应用、实机截图取证包。<br>门禁：Lead 审查截图/API，签发 `COMMERCIALIZED / FROZEN`。 |
-| **Phase 4: 压测、加固与发布<br>(Hardening, Stress & Release)** | 下发压测参数（如 2,000 轮循环 / 并发压测）与发布检查清单。 | 执行长周期确定性模拟或并发测试，代码整洁加固，构建最终发布二进制/容器。 | 生产级发布包、Release Notes、最终 Tag。<br>门禁：Zero P0/P1 缺陷，用户一键即可运行。 |
+| Phase | Project Lead | Chief Engineer | Typical gate |
+| --- | --- | --- | --- |
+| **0. Charter & Architecture** | Refine scope, constraints, architecture, contracts, acceptance criteria | Inspect repository, environment, available tooling | Architecture and scope approved |
+| **1. Walking Skeleton** | Define the first runnable milestone | Build the smallest runnable skeleton and establish test baseline | Smoke path works and baseline is captured |
+| **2. Domain Logic** | Define business rules and edge cases | Implement bounded domain logic behind testable boundaries | Required domain tests pass; HEAD-ONLY regressions = 0 |
+| **3. Presentation & Integration** | Define API / CLI / UI acceptance criteria | Integrate presentation layers and collect runtime evidence | Integration/visual evidence reviewed |
+| **4. Hardening & Release** | Define project-specific hardening and release checklist | Run appropriate stress/simulation/package/release checks | No unresolved release-blocking defects |
 
----
-
-## 3. The 6-Step Autonomous Loop (日常批次标准 6 步闭环)
-
-1. **Directive Locking (指令接收与边界锁定)**:
-   记录 `BASE SHA`、目标范围、禁止项（Non-goals）与明确验收条件。
-2. **Rules & Contract Check (规则书与冻结保护检查)**:
-   核对业务契约；检查涉及的既有 UI/API 是否处于 `FROZEN` 保护状态，绝不擅自破坏排版。
-3. **Minimal Implementation (最小化实现)**:
-   编写纯领域与业务逻辑，不添加未授权的未来设计，严禁反向耦合第三方平台。
-4. **A/B Test Gate (自动化双门禁与 A/B 归因)**:
-   批量运行测试并与 Baseline XML 比对（使用 `scripts/compare_attribution.py`），**强制 `HEAD-ONLY Failures == 0`**。
-5. **Visual / Runtime Proof (多分辨率实机取证)**:
-   对 UI 相关的项目，自动采样移动端基线（如 `720×1280`）与高密度屏（如 `1440×2560`）实机渲染截图，验证无截断重叠。
-6. **Git Push & CDP Reporting (自主提交与交付)**:
-   提交并推送到 GitHub，通过 `scripts/chatgpt_cdp_bridge.py` 自动化将结构化证据包投递给 Project Lead，等待裁决。
+Do not force identical hardening methods across unrelated project types. For example, a CLI, mobile app, web service, and game may require very different Phase 4 evidence.
 
 ---
 
-## 4. Universal Project Tooling Guide (通用工具链与参考手册)
+## 3. Standard Batch Loop
 
-- **CDP 通信网关**: [scripts/chatgpt_cdp_bridge.py](./scripts/chatgpt_cdp_bridge.py)
-  支持全自动与网页端 ChatGPT / Claude 通信，无需第三方 API Token。
-- **A/B 归因门禁工具**: [scripts/compare_attribution.py](./scripts/compare_attribution.py)
-  通用 NUnit / JUnit / Jest / Vitest / Go / Pytest XML 结果对比，数学级证明零回归。
-- **多分辨率视觉校验**: [scripts/capture_screen.py](./scripts/capture_screen.py)
-  支持 Web (Playwright/Puppeteer)、移动端与游戏引擎截图的尺寸与排版审计。
-- **研发生命周期详细规程**: [references/LIFECYCLE_STAGES.md](./references/LIFECYCLE_STAGES.md)
-- **多技术栈适配指南 (Web/后端/CLI/游戏)**: [references/PROJECT_INITIALIZER.md](./references/PROJECT_INITIALIZER.md)
-- **标准汇报与升级模板**: [references/REPORT_TEMPLATES.md](./references/REPORT_TEMPLATES.md)
-- **真实交付证据包示例**: [examples/sample_report.md](./examples/sample_report.md)
+1. **Directive Locking**  
+   Record the current BASE SHA, batch goal, explicit non-goals, affected surfaces, and acceptance criteria.
+
+2. **Contract / Freeze Check**  
+   Identify whether the batch touches an accepted or `FROZEN` interface, UI surface, schema, or behavior.
+
+3. **Minimal Implementation**  
+   Implement only what the current directive requires. Avoid speculative abstractions or unrelated refactors unless necessary for correctness.
+
+4. **Automated Verification + Regression Attribution**  
+   Run the project-specific test command. When baseline and HEAD test reports are available, use `scripts/compare_attribution.py` and require:
+
+   ```text
+   HEAD-ONLY Failures = Failures(HEAD) - Failures(Baseline) = 0
+   ```
+
+   The included parser handles common NUnit-style and JUnit-style XML. Jest, Vitest, Pytest, or other runners can participate when configured to emit compatible JUnit XML.
+
+5. **Runtime / Visual Evidence**  
+   For UI or visual projects, use the project's actual runtime tooling to capture screenshots at relevant target sizes. Then use `scripts/capture_screen.py` to inspect image dimensions and format evidence references.
+
+6. **Git + CDP Report**  
+   Commit/push according to the target repository's workflow, create an evidence-backed report, and send it to the Project Lead using `scripts/chatgpt_cdp_bridge.py`. Await the Lead's review before declaring the whole project complete.
+
+---
+
+## 4. Tooling
+
+- **CDP bridge** — [`scripts/chatgpt_cdp_bridge.py`](./scripts/chatgpt_cdp_bridge.py)  
+  Sends text to a browser-based ChatGPT / Claude conversation and reads the resulting response through Chrome DevTools Protocol. Browser DOM changes can require selector updates.
+
+- **Regression attribution** — [`scripts/compare_attribution.py`](./scripts/compare_attribution.py)  
+  Compares baseline and HEAD test reports and identifies newly introduced failures. Supports common NUnit/JUnit-style XML; other runners should emit compatible JUnit XML.
+
+- **Screenshot evidence inspector** — [`scripts/capture_screen.py`](./scripts/capture_screen.py)  
+  Inspects existing screenshot dimensions and formats evidence references. It does **not** itself launch Playwright, Puppeteer, mobile emulators, or game engines; the target project should provide the real capture mechanism.
+
+- **Lifecycle details** — [`references/LIFECYCLE_STAGES.md`](./references/LIFECYCLE_STAGES.md)
+- **Project initialization guidance** — [`references/PROJECT_INITIALIZER.md`](./references/PROJECT_INITIALIZER.md)
+- **Workflow specification** — [`references/WORKFLOW_SPEC.md`](./references/WORKFLOW_SPEC.md)
+- **Report templates** — [`references/REPORT_TEMPLATES.md`](./references/REPORT_TEMPLATES.md)
+- **Codex / CLI guide** — [`references/CODEX_GUIDE.md`](./references/CODEX_GUIDE.md)
+- **Example evidence packet** — [`examples/sample_report.md`](./examples/sample_report.md)
+
+---
+
+## 5. CDP Safety Requirements
+
+When using the browser bridge:
+
+1. Launch Chrome with a **dedicated `--user-data-dir`**.
+2. Do not attach the workflow to your everyday Chrome profile.
+3. Do not expose the CDP port to untrusted networks.
+4. Only connect trusted local agents and scripts.
+5. Treat authenticated browser content, cookies, and chat history as sensitive.
+
+See [`SECURITY.md`](./SECURITY.md) and the root [`README.md`](./README.md) for current Chrome 136+ launch examples.
