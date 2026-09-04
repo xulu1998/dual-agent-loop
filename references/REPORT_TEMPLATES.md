@@ -1,76 +1,108 @@
-# Standardized Report Templates (标准汇报模板库)
+# Evidence and Escalation Templates
 
-## Template 1: Directive Completion Evidence Pack (批次完工证据包)
+## Template 1: Directive closeout evidence pack
 
 ```markdown
-【PROJECT LEAD DIRECTIVE CLOSEOUT REPORT】
+# PROJECT LEAD DIRECTIVE CLOSEOUT REPORT
 
-TASK: <Task Name, e.g. ShopCapability Product Rule Implementation>
-BASE SHA: <Base Git SHA>
-HEAD SHA: <Current Commit SHA>
-BRANCH: <Working Branch>
-STATUS: IMPLEMENTED / REVIEW PENDING
+RUN ID: <run_id>
+PHASE: <phase>
+BATCH ID: <batch_id>
+DIRECTIVE ID: <directive_id>
+TASK: <task name>
+BASE SHA: <baseline Git SHA>
+HEAD SHA: <current Git SHA>
+BRANCH: <working branch>
+STATUS: EVIDENCE READY / AWAITING REVIEW
 
-==================================================
-1. IMPLEMENTATION EVIDENCE (实现细节与证据)
-==================================================
-- Component A: <Summary of changes, class names, file paths>
-- Component B: <Summary of changes, class names, file paths>
-- Scope Compliance: Verified 0 unauthorized features added.
+## 1. Scope and implementation evidence
 
-==================================================
-2. AUTOMATED TEST SUITE & A/B ATTRIBUTION (测试门禁)
-==================================================
-- Unit / EditMode Suite:
-  * Total: X | Passed: Y | Failed: Z | Skipped: S
-  * HEAD-ONLY Regressions: 0 (PASSED)
-- Integration / PlayMode Suite:
-  * Total: X | Passed: Y | Failed: Z | Skipped: S
-  * HEAD-ONLY Regressions: 0 (PASSED)
-- New Tests Added: <Count> new tests, all passing:
-  * [List key test names]
+- Goal: <bounded goal>
+- Non-goals preserved: <yes/no + notes>
+- Files/components changed: <paths + concise summary>
+- Frozen contracts touched: <none / explicitly reopened by directive>
 
-==================================================
-3. VISUAL REVIEW EVIDENCE (实机视觉审查证据)
-==================================================
-- Low-Density / Mobile Base (720x1280):
-  * Status: PASSED (Zero text clipping, zero button occlusion)
-  * Screenshot: <Local path or URL>
-- High-Density / Extended (1440x2560):
-  * Status: PASSED (Zero layout breakage, safe areas respected)
-  * Screenshot: <Local path or URL>
+## 2. Automated verification
 
-==================================================
-4. FROZEN SURFACE INTEGRITY (冻结界面保护检查)
-==================================================
-- Certified Screens [List IDs]: Verified 0 layout modifications.
+Project-specific checks:
 
-==================================================
-5. RECOMMENDED NEXT TASK (建议后续任务)
-==================================================
-- <Concise proposal for the next directive>
+- Build/lint/unit/integration/E2E: <commands + result>
+
+Strict baseline-vs-HEAD attribution (when comparable XML exists):
+
+- Baseline report SHA-256: <hash>
+- HEAD report SHA-256: <hash>
+- Runner: <runner/version>
+- New failures: 0
+- Changed failure signatures: 0
+- Missing baseline tests: 0
+- New skips: 0
+- Duplicate test IDs: 0
+- Unknown test states: 0
+- Pre-existing identical failures: <count>
+- Fixed baseline failures: <count>
+- New passing tests: <count/list>
+- Attribution JSON: <path>
+
+If any strict blocker is non-zero, this report is BLOCKED rather than ready for PASS.
+
+## 3. Runtime / visual evidence (if applicable)
+
+- Capture mechanism: <Playwright / engine / emulator / other>
+- Evidence files: <paths/URLs>
+- Relevant target sizes/platforms: <project-specific>
+- Observed issues: <none / list>
+
+## 4. Durable state
+
+- State file: `.dual-agent-loop/run-state.json`
+- Current status: awaiting-review
+- Evidence entries persisted: <yes/no>
+
+## 5. Requested Lead verdict
+
+Please return one explicit verdict:
+
+- PASS
+- REJECT (with corrective directive)
+- BLOCKED (decision/input required)
+- CLOSED
 ```
 
 ---
 
-## Template 2: Blocked / Escalation Report (阻塞升级报告)
+## Template 2: Blocked / escalation report
 
 ```markdown
-【CHIEF ENGINEER BLOCKED / ESCALATION REPORT】
+# CHIEF ENGINEER BLOCKED / ESCALATION REPORT
 
-TASK: <Task Name>
-BLOCKING ISSUE: <Brief Title>
+RUN ID: <run_id>
+BATCH ID: <batch_id>
+DIRECTIVE ID: <directive_id>
+BASE SHA: <base sha>
+HEAD SHA: <head sha if any>
 
-1. PROBLEM DESCRIPTION
-- <Detailed explanation of what failed or what decision is missing>
+## Blocking issue
 
-2. EVIDENCE
-- <Test output, error log, or screenshot demonstrating the conflict>
+<short title>
 
-3. DECISION OPTIONS (A / B / C)
-- Option A: <Description, pros & cons>
-- Option B: <Description, pros & cons>
+## Evidence
 
-4. CURRENT ACTION
-- Work halted on this component to avoid unauthorized side effects. Awaiting Lead directive.
+- failing command / test / log / screenshot / contract conflict
+- exact artifact paths
+- strict attribution blockers if relevant
+
+## Why the Engineer stopped
+
+<explain which directive, frozen contract, missing decision, or safety boundary prevents a valid implementation>
+
+## Decision options
+
+- Option A: <trade-off>
+- Option B: <trade-off>
+- Option C: <trade-off if useful>
+
+## Current action
+
+Work is halted on the blocked scope. No silent contract expansion or test deletion/skipping has been used to bypass the blocker.
 ```
