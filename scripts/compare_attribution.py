@@ -1,40 +1,36 @@
 #!/usr/bin/env python3
-"""
-Regression Attribution Comparator for automated test XML results.
+"""Strict baseline-vs-HEAD regression attribution for NUnit/JUnit XML.
 
-Supported inputs:
-- NUnit-style XML (including Unity / Tuanjie-style test-case elements)
-- Common JUnit-style XML (testcase + failure/error/skipped elements)
+The default gate blocks when the current run introduces any of the following:
+- a test that newly fails (HEAD-only failure)
+- an existing failure whose signature changes
+- a baseline test that disappears from the HEAD inventory
+- a test that becomes newly skipped/ignored/inconclusive
+- duplicate test identifiers that make attribution ambiguous
 
-Computes the exact delta between a Baseline test run and a Head (current) test run:
-- HEAD-ONLY Failures (critical: must be 0 to pass the default gate)
-- Baseline-Only Failures (fixed tests)
-- Identical Failures (pre-existing, inherited from baseline)
-- Changed Failure Signatures (same failing test, different failure text)
+This is deliberately stricter than comparing aggregate pass/fail counts. The
+report can also be emitted as JSON for an agent evidence pack.
 """
+
+from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 
 FAILED_RESULTS = {"failed", "failure", "error"}
 PASSED_RESULTS = {"passed", "pass", "success", "successful"}
 SKIPPED_RESULTS = {"skipped", "ignored", "inconclusive", "notrun", "not-run"}
+NORMALIZED_STATES = {"Passed", "Failed", "Skipped"}
 
 
 def _local_name(tag: str) -> str:
-    """Return an XML tag name without an optional namespace prefix."""
     return tag.split("}", 1)[-1] if "}" in tag else tag
-
-
-def _safe_int(value, default=0):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _direct_child(element, wanted_names):
@@ -56,7 +52,6 @@ def _first_descendant_text(element, wanted_names):
 
 
 def _normalize_result(test_case) -> str:
-    """Normalize NUnit/JUnit case state into Passed / Failed / Skipped / other."""
     raw_result = test_case.attrib.get("result")
     if raw_result:
         lowered = raw_result.strip().lower()
@@ -66,9 +61,9 @@ def _normalize_result(test_case) -> str:
             return "Passed"
         if lowered in SKIPPED_RESULTS:
             return "Skipped"
-        return raw_result
+        return raw_result.strip() or "Unknown"
 
-    # JUnit normally expresses state through child elements rather than result=.
+    # JUnit normally expresses state through child elements.
     if _direct_child(test_case, {"failure", "error"}) is not None:
         return "Failed"
     if _direct_child(test_case, {"skipped"}) is not None:
@@ -79,18 +74,15 @@ def _normalize_result(test_case) -> str:
 def _case_name(test_case) -> str:
     fullname = test_case.attrib.get("fullname")
     if fullname:
-        return fullname
+        return fullname.strip()
 
-    name = test_case.attrib.get("name", "Unknown")
-    classname = test_case.attrib.get("classname")
-    if classname and name:
-        return f"{classname}.{name}"
-    return name
+    name = (test_case.attrib.get("name") or "Unknown").strip()
+    classname = (test_case.attrib.get("classname") or "").strip()
+    return f"{classname}.{name}" if classname else name
 
 
 def _failure_details(test_case):
     failure_element = _direct_child(test_case, {"failure", "error"})
-
     message = ""
     stack_trace = ""
 
@@ -100,13 +92,11 @@ def _failure_details(test_case):
         if body:
             stack_trace = body
             if not message:
-                # Keep the signature concise while preserving the full body as stack text.
                 message = body.splitlines()[0][:1000]
 
-    # NUnit often nests <message> and <stack-trace> below <failure>.
+    # NUnit often nests message/stack-trace below <failure>.
     nested_message = _first_descendant_text(test_case, {"message"})
     nested_stack = _first_descendant_text(test_case, {"stack-trace", "stacktrace"})
-
     if nested_message:
         message = nested_message
     if nested_stack:
@@ -115,8 +105,16 @@ def _failure_details(test_case):
     return message, stack_trace
 
 
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def parse_test_results(xml_path: str):
-    """Parse common NUnit/JUnit-family XML into a normalized test dictionary."""
+    """Parse NUnit/JUnit-family XML into a normalized test inventory."""
     if not os.path.exists(xml_path):
         raise FileNotFoundError(f"Test result file not found: {xml_path}")
 
@@ -124,6 +122,9 @@ def parse_test_results(xml_path: str):
     root = tree.getroot()
 
     tests = {}
+    duplicates = []
+    unknown_states = []
+
     for element in root.iter():
         if _local_name(element.tag) not in {"test-case", "testcase"}:
             continue
@@ -132,160 +133,230 @@ def parse_test_results(xml_path: str):
         result = _normalize_result(element)
         fail_msg, stack_trace = _failure_details(element)
 
+        if name in tests:
+            duplicates.append(name)
+            continue
+
+        if result not in NORMALIZED_STATES:
+            unknown_states.append({"name": name, "state": result})
+
         tests[name] = {
             "result": result,
             "message": fail_msg,
             "stack": stack_trace,
         }
 
-    # Prefer summary attributes where available, but fall back to normalized cases.
-    total = _safe_int(root.attrib.get("total", root.attrib.get("tests")), len(tests))
-    if total == 0 and tests:
-        total = len(tests)
-
-    failed_attr = root.attrib.get("failed", root.attrib.get("failures"))
-    failed = _safe_int(failed_attr, -1)
-    errors = _safe_int(root.attrib.get("errors"), 0)
-    if failed < 0:
-        failed = sum(1 for info in tests.values() if info["result"] == "Failed")
-    else:
-        failed += errors
-
-    skipped_attr = root.attrib.get("skipped", root.attrib.get("disabled"))
-    skipped = _safe_int(skipped_attr, -1)
-    if skipped < 0:
-        skipped = sum(1 for info in tests.values() if info["result"] == "Skipped")
-
-    passed = _safe_int(root.attrib.get("passed"), -1)
-    if passed < 0:
-        passed = max(total - failed - skipped, 0)
+    total = len(tests)
+    passed = sum(1 for info in tests.values() if info["result"] == "Passed")
+    failed = sum(1 for info in tests.values() if info["result"] == "Failed")
+    skipped = sum(1 for info in tests.values() if info["result"] == "Skipped")
 
     return {
+        "path": os.path.abspath(xml_path),
+        "sha256": _sha256(xml_path),
         "total": total,
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
         "tests": tests,
+        "duplicates": sorted(set(duplicates)),
+        "unknown_states": unknown_states,
     }
 
 
 def _failure_signature(info):
-    """Build a stable-enough signature for detecting changed failure reasons."""
+    """Signature used to tell a pre-existing failure from a changed failure."""
     return (info.get("message", "").strip(), info.get("stack", "").strip())
 
 
-def compare_suites(baseline_path: str, head_path: str, suite_name: str = "Test Suite"):
-    """Compare baseline and HEAD test results and return an attribution dictionary."""
+def compare_suites(
+    baseline_path: str,
+    head_path: str,
+    suite_name: str = "Test Suite",
+    *,
+    base_sha: str | None = None,
+    head_sha: str | None = None,
+    runner: str | None = None,
+):
     base = parse_test_results(baseline_path)
     head = parse_test_results(head_path)
 
-    print(f"=== {suite_name} COMPARISON ===")
-    print(
-        f"Baseline: Total={base['total']}, Passed={base['passed']}, "
-        f"Failed={base['failed']}, Skipped={base['skipped']}"
-    )
-    print(
-        f"HEAD:     Total={head['total']}, Passed={head['passed']}, "
-        f"Failed={head['failed']}, Skipped={head['skipped']}"
-    )
-    print("-" * 50)
+    base_names = set(base["tests"])
+    head_names = set(head["tests"])
+    common_names = base_names & head_names
 
-    base_fails = {k: v for k, v in base["tests"].items() if v["result"] == "Failed"}
-    head_fails = {k: v for k, v in head["tests"].items() if v["result"] == "Failed"}
+    missing_tests = sorted(base_names - head_names)
+    new_tests = sorted(head_names - base_names)
 
-    identical = []
-    base_only = []
-    head_only = []
-    changed_sig = []
+    head_only_failures = []
+    fixed_failures = []
+    identical_failures = []
+    changed_failures = []
+    new_skips = []
+    state_transitions = []
 
-    for name, b_info in base_fails.items():
-        if name not in head_fails:
-            base_only.append(name)
-            continue
+    for name in sorted(common_names):
+        base_info = base["tests"][name]
+        head_info = head["tests"][name]
+        base_state = base_info["result"]
+        head_state = head_info["result"]
 
-        h_info = head_fails[name]
-        if _failure_signature(b_info) == _failure_signature(h_info):
-            identical.append(name)
-        else:
-            changed_sig.append(
-                {
-                    "name": name,
-                    "baseline_msg": b_info["message"],
-                    "head_msg": h_info["message"],
-                }
-            )
+        if base_state != head_state:
+            state_transitions.append({"name": name, "baseline": base_state, "head": head_state})
 
-    for name in head_fails:
-        if name not in base_fails:
-            head_only.append(name)
+        if head_state == "Failed" and base_state != "Failed":
+            head_only_failures.append(name)
+        elif base_state == "Failed" and head_state == "Failed":
+            if _failure_signature(base_info) == _failure_signature(head_info):
+                identical_failures.append(name)
+            else:
+                changed_failures.append(
+                    {
+                        "name": name,
+                        "baseline_msg": base_info.get("message", ""),
+                        "head_msg": head_info.get("message", ""),
+                    }
+                )
+        elif base_state == "Failed" and head_state != "Failed":
+            fixed_failures.append(name)
 
-    print(f"  Identical Failures (Pre-existing): {len(identical)}")
-    print(f"  Fixed in HEAD (Baseline-Only):     {len(base_only)}")
-    print(f"  HEAD-ONLY Failures (NEW BREAKS):   {len(head_only)}")
-    print(f"  Changed Signatures:                {len(changed_sig)}")
-    print("-" * 50)
+        if head_state == "Skipped" and base_state != "Skipped":
+            new_skips.append(name)
 
-    if head_only:
-        print("[FAIL GATE] Tests that fail in HEAD but not in the baseline:")
-        for test_name in head_only:
-            print(f"  * {test_name}")
-            msg = head_fails[test_name]["message"]
-            if msg:
-                suffix = "..." if len(msg) > 200 else ""
-                print(f"    Message: {msg[:200]}{suffix}")
+    # A brand-new test that fails is also a HEAD-only failure. A brand-new test
+    # that is skipped is also considered a new skip because it contributes no
+    # verification evidence.
+    for name in new_tests:
+        state = head["tests"][name]["result"]
+        if state == "Failed":
+            head_only_failures.append(name)
+        elif state == "Skipped":
+            new_skips.append(name)
 
-    return {
-        "suite": suite_name,
-        "baseline_summary": {k: base[k] for k in ["total", "passed", "failed", "skipped"]},
-        "head_summary": {k: head[k] for k in ["total", "passed", "failed", "skipped"]},
-        "head_only_count": len(head_only),
-        "head_only_tests": head_only,
-        "fixed_count": len(base_only),
-        "fixed_tests": base_only,
-        "identical_count": len(identical),
-        "changed_signature_count": len(changed_sig),
-        "changed_signatures": changed_sig,
-        "gate_pass": len(head_only) == 0,
+    head_only_failures = sorted(set(head_only_failures))
+    new_skips = sorted(set(new_skips))
+
+    duplicate_tests = sorted(set(base["duplicates"] + head["duplicates"]))
+    unknown_states = {
+        "baseline": base["unknown_states"],
+        "head": head["unknown_states"],
     }
+
+    blockers = {
+        "head_only_failures": head_only_failures,
+        "changed_failures": changed_failures,
+        "missing_tests": missing_tests,
+        "new_skips": new_skips,
+        "duplicate_tests": duplicate_tests,
+        "unknown_states": unknown_states,
+    }
+    blocker_count = (
+        len(head_only_failures)
+        + len(changed_failures)
+        + len(missing_tests)
+        + len(new_skips)
+        + len(duplicate_tests)
+        + len(base["unknown_states"])
+        + len(head["unknown_states"])
+    )
+
+    result = {
+        "schema_version": 2,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "suite": suite_name,
+        "runner": runner,
+        "base_sha": base_sha,
+        "head_sha": head_sha,
+        "baseline": {
+            "path": base["path"],
+            "sha256": base["sha256"],
+            "summary": {k: base[k] for k in ["total", "passed", "failed", "skipped"]},
+        },
+        "head": {
+            "path": head["path"],
+            "sha256": head["sha256"],
+            "summary": {k: head[k] for k in ["total", "passed", "failed", "skipped"]},
+        },
+        "inventory": {
+            "baseline_count": len(base_names),
+            "head_count": len(head_names),
+            "new_tests": new_tests,
+            "missing_tests": missing_tests,
+        },
+        "attribution": {
+            "head_only_failures": head_only_failures,
+            "changed_failures": changed_failures,
+            "identical_failures": identical_failures,
+            "fixed_failures": fixed_failures,
+            "new_skips": new_skips,
+            "state_transitions": state_transitions,
+        },
+        "blockers": blockers,
+        "blocker_count": blocker_count,
+        "gate_pass": blocker_count == 0,
+    }
+
+    print(f"=== {suite_name} STRICT ATTRIBUTION ===")
+    print(
+        f"Baseline: total={base['total']} passed={base['passed']} "
+        f"failed={base['failed']} skipped={base['skipped']}"
+    )
+    print(
+        f"HEAD:     total={head['total']} passed={head['passed']} "
+        f"failed={head['failed']} skipped={head['skipped']}"
+    )
+    print("-" * 64)
+    print(f"New failures:              {len(head_only_failures)}")
+    print(f"Changed failure signatures:{len(changed_failures):>3}")
+    print(f"Missing baseline tests:    {len(missing_tests):>3}")
+    print(f"New skips:                 {len(new_skips):>3}")
+    print(f"Duplicate test IDs:        {len(duplicate_tests):>3}")
+    print(
+        f"Unknown states:            "
+        f"{len(base['unknown_states']) + len(head['unknown_states']):>3}"
+    )
+    print(f"Fixed baseline failures:   {len(fixed_failures):>3}")
+    print(f"New tests discovered:      {len(new_tests):>3}")
+    print("-" * 64)
+    print("GATE:", "PASS" if result["gate_pass"] else f"FAIL ({blocker_count} blocker(s))")
+
+    return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="A/B test regression attribution comparator")
-    parser.add_argument("--baseline", required=True, help="Path to baseline test result XML")
-    parser.add_argument("--head", required=True, help="Path to HEAD test result XML")
-    parser.add_argument("--suite", default="Unit Tests", help="Suite name (for example: Unit Tests)")
-    parser.add_argument("--json", help="Optional path to write comparison JSON")
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Backward-compatible alias for the default behavior: fail when HEAD-ONLY > 0",
-    )
+    parser = argparse.ArgumentParser(description="Strict baseline-vs-HEAD test attribution gate")
+    parser.add_argument("--baseline", required=True, help="Baseline NUnit/JUnit XML")
+    parser.add_argument("--head", required=True, help="HEAD NUnit/JUnit XML")
+    parser.add_argument("--suite", default="Unit Tests", help="Human-readable suite name")
+    parser.add_argument("--json", help="Optional JSON evidence output path")
+    parser.add_argument("--base-sha", help="Optional baseline Git commit SHA")
+    parser.add_argument("--head-sha", help="Optional HEAD Git commit SHA")
+    parser.add_argument("--runner", help="Optional test-runner identifier/version")
     parser.add_argument(
         "--no-strict",
         action="store_true",
-        help="Report new failures without exiting with status 1",
+        help="Report blockers without returning exit status 1",
+    )
+    args = parser.parse_args()
+
+    result = compare_suites(
+        args.baseline,
+        args.head,
+        args.suite,
+        base_sha=args.base_sha,
+        head_sha=args.head_sha,
+        runner=args.runner,
     )
 
-    args = parser.parse_args()
-    result = compare_suites(args.baseline, args.head, args.suite)
-
     if args.json:
+        output_dir = os.path.dirname(os.path.abspath(args.json))
+        os.makedirs(output_dir, exist_ok=True)
         with open(args.json, "w", encoding="utf-8") as handle:
             json.dump(result, handle, indent=2, ensure_ascii=False)
-        print(f"Report saved to {args.json}")
+        print(f"Evidence JSON: {args.json}")
 
-    strict = not args.no_strict
-    if strict and not result["gate_pass"]:
-        print(
-            f"\n[STRICT GATE FAILED] {result['head_only_count']} HEAD-ONLY "
-            "failures detected."
-        )
+    if not result["gate_pass"] and not args.no_strict:
         sys.exit(1)
-
-    if result["gate_pass"]:
-        print("\n[GATE PASSED] Zero HEAD-ONLY regressions.")
-    else:
-        print("\n[REPORT ONLY] HEAD-ONLY regressions detected; strict exit disabled.")
 
 
 if __name__ == "__main__":
