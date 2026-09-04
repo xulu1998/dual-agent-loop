@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="demo">
+  <testcase classname="demo.Cart" name="adds_item">
+    <failure message="new null-reference regression">new null-reference regression</failure>
+  </testcase>
+  <testcase classname="demo.Legacy" name="known_failure">
+    <failure message="different failure reason">different failure reason</failure>
+  </testcase>
+  <testcase classname="demo.Cart" name="new_discount_rule">
+    <skipped />
+  </testcase>
+</testsuite>
