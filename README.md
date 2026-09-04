@@ -144,3 +144,16 @@ git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-ag
 ## 开源协议 (License)
 
 本项目基于 [MIT License](./LICENSE) 开源。欢迎 Star、Fork 并根据团队工作流定制！
+
+---
+
+## 💻 Codex 用户专用快速指引 (Codex Users Quickstart)
+
+如果你是使用 **OpenAI Codex / CLI Agent** 的新用户，请直接参阅：
+👉 **[Codex / CLI 极速上手详细指南](./references/CODEX_GUIDE.md)**
+
+### 3 步启动极速概览：
+1. **启动 Chrome 调试端口 (9222)** 并在浏览器中打开 ChatGPT 或 Claude 会话。
+2. **克隆本技能**：`git clone https://github.com/xulu1998/dual-agent-loop.git`
+3. **在 Codex 中粘贴启动指令**：
+   > *"请读取 `dual-agent-loop/SKILL.md`，你将扮演首席工程师。通过 `dual-agent-loop/scripts/chatgpt_cdp_bridge.py` 联络 Chrome 9222 端口上的 Project Lead。我们的想法是：[描述你的一句话想法]。请引导 Lead 启动 Phase 0 规划并推进端到端闭环研发！"*
