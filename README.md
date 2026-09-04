@@ -1,173 +1,325 @@
-# Universal Dual-Agent Engineering Loop (通用端到端双 Agent 闭环研发系统)
+# dual-agent-loop
 
-[English](#english-overview) | [简体中文](#简体中文介绍)
+> Turn two AI agents into a closed-loop software engineering team.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Agent Skill](https://img.shields.io/badge/type-agent%20skill-blue.svg)](./SKILL.md)
+[![Chrome CDP](https://img.shields.io/badge/transport-Chrome%20CDP-blueviolet.svg)](https://developer.chrome.com/docs/devtools/)
+
+**`dual-agent-loop`** is an open-source engineering workflow and agent skill that separates software development into two cooperating roles:
+
+- **Project Lead** — runs in a browser-based ChatGPT / Claude session and owns requirements, architecture, review, acceptance gates, and final sign-off.
+- **Chief Engineer** — runs in a local coding agent such as Antigravity, Claude Code, Codex, or another CLI agent and owns implementation, tests, repository changes, and evidence collection.
+
+The two roles exchange directives and evidence through **Chrome DevTools Protocol (CDP)**, so the user does not have to manually copy every message between the browser and terminal.
+
+**The goal:** make agentic software development more reviewable, regression-aware, and repeatable — not merely more autonomous.
+
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Engineering gates](#engineering-gates) · [Security](#security) · [中文介绍](#简体中文介绍)
+
+---
+
+## Why this exists
+
+A single coding agent is often asked to do four very different jobs at once: define the product, design the architecture, modify the codebase, and judge whether its own work is good enough.
+
+`dual-agent-loop` deliberately splits those responsibilities.
+
+| Project Lead | Chief Engineer |
+| --- | --- |
+| Refines ambiguous requirements | Inspects the local repository and environment |
+| Chooses architecture and acceptance criteria | Implements the smallest compliant change |
+| Issues bounded batch directives | Runs unit / integration / E2E checks |
+| Reviews screenshots and evidence | Produces machine-readable reports |
+| Freezes accepted UI/contracts | Reports back through CDP |
+| Decides whether work passes a gate | Does not self-approve product quality |
+
+This creates an explicit **plan → implement → prove → review → continue** loop.
+
+---
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[User idea] --> L[Project Lead\nBrowser]
+    L -->|Batch directive| B[CDP bridge]
+    B --> E[Chief Engineer\nLocal coding agent]
+    E --> C[Code changes]
+    C --> T[Tests + evidence]
+    T --> B
+    B -->|Report + artifacts| L
+    L -->|Pass / reject / next directive| B
+```
+
+The workflow is organized into five lifecycle phases:
+
+1. **Charter & Architecture** — turn a one-line idea into scope, constraints, contracts, and an implementation plan.
+2. **Walking Skeleton** — create the smallest runnable system and establish the first automated baseline.
+3. **Domain Logic** — implement business rules behind testable boundaries.
+4. **Presentation & Integration** — connect APIs/UI/CLI surfaces and collect integration/visual evidence.
+5. **Hardening & Release** — run stress/simulation/release checks appropriate to the project before final sign-off.
+
+The lifecycle is designed to adapt across web, backend, CLI, mobile, and game projects. Project-specific tools and gates still need to match the actual stack.
+
+---
+
+## Engineering gates
+
+### 1. Zero-new-regression attribution
+
+Instead of treating every pre-existing test failure as a failure introduced by the current change, the included comparator computes:
+
+```text
+HEAD-ONLY failures = failures(HEAD) - failures(baseline)
+```
+
+The default gate requires:
+
+```text
+HEAD-ONLY failures = 0
+```
+
+`scripts/compare_attribution.py` supports NUnit-style XML and common JUnit-style XML outputs. Test runners such as Jest, Vitest, or Pytest can participate when configured to emit a compatible JUnit XML report.
+
+### 2. Frozen contracts and accepted UI
+
+Once the Lead marks an interface, behavior, or visual surface as **FROZEN**, later batches must preserve it unless a new directive explicitly reopens that surface.
+
+### 3. Evidence before completion claims
+
+The Engineer should attach objective evidence whenever practical: tests, logs, diffs, machine-readable reports, or screenshots. `scripts/capture_screen.py` currently validates screenshot dimensions and formats visual evidence; project-specific capture tooling can produce the source screenshots.
+
+### 4. Automation-first verification
+
+If a requirement can reasonably be proven by a repeatable automated check, prefer that check over asking the user to manually click through the same verification every batch.
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- Python 3
+- Google Chrome / Chromium with CDP support
+- A browser session for ChatGPT or Claude
+- A local coding agent capable of running shell commands and editing files
+
+### 1. Install the skill
+
+From your target project directory:
+
+```bash
+git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-agent-loop
+python -m pip install -r .agents/skills/dual-agent-loop/requirements.txt
+```
+
+If your agent uses a different skill directory, clone the repository wherever that agent can read `SKILL.md`.
+
+### 2. Launch an isolated Chrome profile with remote debugging
+
+> **Chrome 136+ note:** Chrome no longer honors `--remote-debugging-port` against the default Chrome data directory. Use a separate `--user-data-dir` as shown below. Keeping the automation profile separate from your everyday browser profile is also safer.
+
+**macOS**
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.dual-agent-loop/chrome-profile"
+```
+
+**Linux**
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/dual-agent-loop-chrome
+```
+
+**Windows PowerShell**
+
+```powershell
+& "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  "--user-data-dir=$env:TEMP\dual-agent-loop-chrome"
+```
+
+In that isolated Chrome profile, sign in to ChatGPT or Claude and open the conversation that will act as the Project Lead.
+
+### 3. Smoke-test the bridge
+
+For ChatGPT:
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/chatgpt_cdp_bridge.py \
+  --pattern chatgpt.com \
+  --message "Reply with exactly: DUAL_AGENT_LOOP_OK"
+```
+
+For Claude, use:
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/chatgpt_cdp_bridge.py \
+  --pattern claude.ai \
+  --message "Reply with exactly: DUAL_AGENT_LOOP_OK"
+```
+
+If the terminal receives the browser agent's reply, the transport is working.
+
+### 4. Start the engineering loop
+
+Give your local Engineer agent a prompt like this:
+
+```text
+Read .agents/skills/dual-agent-loop/SKILL.md and act as the Chief Engineer.
+Use the dual-agent-loop CDP bridge to communicate with the Project Lead
+running in Chrome on port 9222.
+
+Project idea:
+[describe the product in one or two sentences]
+
+Start at Phase 0. Ask the Project Lead to refine the charter and issue the
+first bounded batch directive. After each batch, run the required gates and
+send an evidence-backed report to the Lead before continuing.
+```
+
+For a more detailed Codex / CLI walkthrough, see **[references/CODEX_GUIDE.md](./references/CODEX_GUIDE.md)**.
+
+---
+
+## Example regression gate
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/compare_attribution.py \
+  --baseline artifacts/baseline.xml \
+  --head artifacts/head.xml \
+  --suite "Unit Tests" \
+  --json artifacts/attribution.json
+```
+
+A passing run reports zero HEAD-only failures. See **[examples/sample_report.md](./examples/sample_report.md)** for an example evidence packet.
+
+---
+
+## Repository layout
+
+```text
+dual-agent-loop/
+├── SKILL.md                       # Agent workflow contract / skill entry point
+├── README.md                      # Project overview and quick start
+├── SECURITY.md                    # CDP and authenticated-browser safety guidance
+├── requirements.txt               # Lightweight Python dependencies
+├── scripts/
+│   ├── chatgpt_cdp_bridge.py      # Browser ↔ terminal CDP message bridge
+│   ├── compare_attribution.py     # Baseline-vs-HEAD regression attribution gate
+│   └── capture_screen.py          # Screenshot evidence inspector / formatter
+├── references/
+│   ├── LIFECYCLE_STAGES.md        # Five-phase lifecycle details
+│   ├── PROJECT_INITIALIZER.md     # Stack-adaptation guidance
+│   ├── WORKFLOW_SPEC.md           # Roles, boundaries, and SOP
+│   ├── REPORT_TEMPLATES.md        # Completion / blocker report templates
+│   ├── CODEX_GUIDE.md             # Codex / CLI quick-start guide
+│   └── COST_AND_MODEL_TIERS.md    # Optional asymmetric model-tiering guidance
+└── examples/
+    └── sample_report.md            # Example evidence packet
+```
+
+---
+
+## Security
+
+CDP is powerful. An agent attached to an authenticated browser session can inspect and interact with content available in that session.
+
+- Use a **dedicated Chrome user-data directory** for this workflow.
+- Do **not** point remote debugging at your everyday Chrome profile.
+- Only connect local agents and scripts you trust.
+- Treat browser cookies, logged-in sessions, private chats, and page content as sensitive data.
+- Bind the bridge to local CDP endpoints only; do not expose the debugging port to untrusted networks.
+
+Read **[SECURITY.md](./SECURITY.md)** before using the bridge with accounts that contain sensitive data.
+
+---
+
+## Current status and scope
+
+This repository is an **early-stage open-source workflow/skill**, not a hosted autonomous-agent platform.
+
+The CDP bridge interacts with browser UI elements whose DOM can change over time, so selectors may occasionally need updates after ChatGPT or Claude UI changes. The lifecycle and gate concepts are tool-agnostic, but individual projects still need stack-specific build, test, screenshot, packaging, and release commands.
+
+That trade-off is intentional: the project provides a disciplined control loop and reusable gates while leaving the actual engineering toolchain under the repository owner's control.
+
+---
+
+## Cost and model tiering
+
+The two-role architecture allows teams to use different model tiers for planning/review and implementation. That can reduce cost in some setups, but actual pricing, subscription limits, and model availability change frequently.
+
+See **[references/COST_AND_MODEL_TIERS.md](./references/COST_AND_MODEL_TIERS.md)** for the design pattern rather than relying on fixed price claims in this README.
+
+---
+
+## Roadmap
+
+- [ ] Add a short end-to-end demo recording / GIF
+- [ ] Add fixture-based tests for regression-report parsers
+- [ ] Harden ChatGPT / Claude DOM adapters against UI changes
+- [ ] Add more tested project adapters and evidence examples
+- [ ] Simplify installation for additional agent-skill ecosystems
+
+Issues and pull requests are welcome, especially reproducible reports for browser-selector breakage or test-report formats not yet handled.
 
 ---
 
 ## 简体中文介绍
 
-`dual-agent-loop` 是一个为**全品类软件工程项目（Web全栈、后端微服务、系统CLI工具、移动端应用、数字游戏）**设计的通用端到端双 Agent 自主研发生命周期操作系统与技能包（Antigravity / Claude Code Skill）。
+`dual-agent-loop` 是一个**双 Agent 闭环软件研发工作流与技能包**。它把“规划/架构/验收”和“编码/测试/证据收集”拆给两个角色：
 
-### 🌟 核心理念：从“用户一句话描述”到“高质量交付成品”
-在传统单 Agent 模式下，代码模型极易出现“脑补过度”、“破坏既有结构”、“缺乏客观测试就谎称已完成”的问题。
-本系统将软件生命周期完整拆分，由 **双端分工协作** 驱动：
-- **Project Lead（项目负责人 / ChatGPT / Claude 网页端）**：主管**产品规划、技术选型、架构拆解、实机审查与门禁验收**。
-- **Chief Engineer（首席工程师 / Antigravity / 本地终端）**：主管**环境体检、脚手架搭建、纯领域编码、批处理自动化测试与 CDP 汇报**。
+- **Project Lead（项目负责人）**：运行在浏览器端 ChatGPT / Claude 中，负责需求提炼、架构、验收标准、视觉审查和最终签发。
+- **Chief Engineer（首席工程师）**：运行在本地 Antigravity / Claude Code / Codex 等编码 Agent 中，负责修改仓库、运行测试、生成证据并汇报。
 
-二者通过 **Chrome DevTools Protocol (CDP)** 建立本地到浏览器的无缝直连，实现无需人工充当传话筒、全流程自驱动的闭环工程流。
+双方通过 **Chrome DevTools Protocol (CDP)** 传递 Directive 与 Report，减少用户在网页端和终端之间反复复制粘贴。
 
----
-
-### 🔄 端到端 5 大生命周期阶段 (The 5 Lifecycle Phases)
-
-```
-[ 用户一句话想法 ]
-        │
-        ▼
-Phase 0: 需求提炼与技术选型 (Charter & Architecture)
-  • Lead: 拆解需求 -> 功能规范、技术栈选择 (Web/Go/Rust/Python/Unity)、数据契约
-  • Engineer: 本地环境诊断、Git 仓库初始化 -> 签发 ARCHITECTURE_APPROVED
-        │
-        ▼
-Phase 1: 最小可运行骨架 (Walking Skeleton & Pipeline)
-  • Engineer: 搭建最小可运行工程、配置 CI/自动化测试套件、生成首版 Baseline XML
-  • Lead: 审查骨架与初始 Smoke 结果 -> 固化 Baseline
-        │
-        ▼
-Phase 2: 领域模型与数据层驱动 (Domain Logic & Unit Tests)
-  • Lead: 明确业务规则书 (Rulebook)、核心计算公式与边界条件
-  • Engineer: 纯领域逻辑实现 (零第三方耦合) + 100% 单测覆盖 + A/B 归因测试 (HEAD-ONLY=0)
-        │
-        ▼
-Phase 3: 接口与界面呈现集成 (API, Presentation & UI)
-  • Lead: 下达 API Schema、CLI 交互或 UI 视觉设计标准
-  • Engineer: 实现 UI / 接口层、E2E 集成测试、双分辨率实机截图取证 (720p & 2K)
-  • Lead: 审查实机截图 -> 签发 COMMERCIALIZED / FROZEN 保护状态
-        │
-        ▼
-Phase 4: 压测、加固与打包发布 (Hardening, Sim & Production Release)
-  • Lead: 下发长周期模拟 / 并发压测指标与发布清单
-  • Engineer: 2,000 轮确定性模拟 / 负载压测、代码加固、产出最终 Release 制品
-        │
-        ▼
-[ 生产就绪的完整可用制品 ]
-```
-
----
-
-### 🛡️ 工程师行为准则与门禁红线 (Golden Rules)
-
-1. **数学级零回归门禁 (Strict A/B Attribution Gate)**：
-   测试结果绝不允许仅靠肉眼粗看。每次修改后，自动解析当前测试 XML 与基准 XML 进行差集计算：
-   $$\text{HEAD-ONLY Failures} = \text{Failures}(\text{HEAD}) \setminus \text{Failures}(\text{Baseline}) = 0$$
-   只要当前分支引入了哪怕 1 个新失败，门禁立即熔断，必须修复。
-2. **冻结界面与契约不可侵犯 (Frozen Protection)**：
-   一旦某一功能或页面被 Lead 签发为 `FROZEN`，后续开发中严禁破坏其排版、尺寸和既有交互。
-3. **真实多分辨率实机取证 (Visual Review)**：
-   涉及 UI 的项目（Web、App、游戏），必须由脚本自动采样移动端基准屏（如 720×1280）与长屏/高分屏（如 1440×2560）截图，杜绝文字溢出、截断与遮挡。
-4. **拒绝任何人工测试负担**：
-   凡是能通过代码、日志、单元测试、E2E、无头仿真证明的事情，绝不让用户手工去点去测。
-
----
-
-## English Overview
-
-`dual-agent-loop` is an end-to-end autonomous software engineering operating system and skill package for **ANY software domain** (Web full-stack, backend APIs, systems CLI tools, mobile apps, and video games).
-
-It operationalizes an autonomous pair-programming loop between:
-- **Project Lead Agent** (in Chrome browser via ChatGPT / Claude Web UI): Handles requirements refinement, system architecture, batch directive issuance, visual inspection, and final signoff.
-- **Chief Engineer Agent** (in local terminal via Antigravity / Claude Code / Codex): Handles repository setup, pure domain coding, batch automated test suites, mathematical A/B attribution gates (`HEAD-ONLY = 0`), multi-resolution visual sampling, and autonomous CDP reporting.
-
-Both agents communicate bi-directionally through the **Chrome DevTools Protocol (CDP)** over WebSockets without extra API token overhead.
-
----
-
-## 目录结构 (Directory Structure)
+核心闭环是：
 
 ```text
-dual-agent-loop/
-├── SKILL.md                          # Antigravity Skill 标准规范入口
-├── README.md                         # 详细中英双语使用手册
-├── LICENSE                           # MIT License
-├── scripts/
-│   ├── chatgpt_cdp_bridge.py        # Chrome 远程调试 WebSocket 双端通信网关
-│   ├── compare_attribution.py       # 通用 NUnit/JUnit/Jest/Vitest/Pytest A/B 归因门禁工具
-│   └── capture_screen.py            # 实机视觉取证与多分辨率尺寸分析工具
-├── references/
-│   ├── LIFECYCLE_STAGES.md          # 端到端 5 阶段研发生命周期详细规程
-│   ├── PROJECT_INITIALIZER.md       # 多技术栈项目初始化与适配指南 (Web/后端/CLI/游戏)
-│   ├── WORKFLOW_SPEC.md             # 详细 SOP 工程规范与角色边界
-│   └── REPORT_TEMPLATES.md          # 完工汇报与阻塞升级标准模板
-└── examples/
-    └── sample_report.md             # 真实工业级项目证据包范例
+用户想法
+  ↓
+Lead 拆需求 / 定架构 / 下达有限范围 Directive
+  ↓
+Engineer 编码 / 测试 / 生成证据
+  ↓
+A/B 回归归因 + 视觉/日志证据
+  ↓
+Lead 验收：通过 / 驳回 / 冻结 / 下一个 Directive
+  ↺
 ```
 
----
+### 五阶段生命周期
 
-## 快速上手 (Quick Start)
+1. **Phase 0 — Charter & Architecture**：需求提炼、边界与架构。
+2. **Phase 1 — Walking Skeleton**：建立最小可运行骨架与测试基线。
+3. **Phase 2 — Domain Logic**：实现领域规则并建立自动化验证。
+4. **Phase 3 — Presentation & Integration**：API / UI / CLI 集成与证据审查。
+5. **Phase 4 — Hardening & Release**：按项目类型进行压测、仿真、加固、打包与最终验收。
 
-### 1. 启动 Chrome 远程调试端口
+### 最重要的门禁
 
-```bash
-# macOS
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 &
+**零新增回归：**
 
-# Linux
-google-chrome --remote-debugging-port=9222 &
-
-# Windows
-chrome.exe --remote-debugging-port=9222
-```
-并在打开的 Chrome 中登录 ChatGPT 或 Claude，打开对应项目的对话窗口。
-
-### 2. 作为技能安装使用 (Install Skill)
-
-在任意目标项目的工作区中克隆即可（Antigravity 会自动发现并装载）：
-
-```bash
-git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-agent-loop
+```text
+HEAD-ONLY Failures = Failures(HEAD) - Failures(Baseline) = 0
 ```
 
-### 3. 一句话启动端到端项目循环
+**冻结保护：** 已通过验收并标记 `FROZEN` 的界面、契约或行为，后续批次不能在没有新指令的情况下破坏。
 
-你只需要对你的工程师 Agent 说：
-> *“请激活 `dual-agent-loop` 技能。我们的项目想法是：[描述你的一句话想法]。请通过 CDP 连接 Chrome 中的 Project Lead，从 Phase 0 需求与架构规划开始，推进端到端闭环研发。”*
+**证据优先：** 能用测试、日志、机器可读结果、截图证明的事情，不以“Agent 自己说完成了”作为验收依据。
 
-两端 Agent 将自动开始：
-1. **Lead** 梳理产品方案与架构，生成 `PROJECT_CHARTER.md`；
-2. **Engineer** 建立本地脚手架与自动化测试流水线；
-3. **循环推进** 纯领域逻辑、UI/接口集成与全自动门禁比对；
-4. 直至 **Phase 4** 产出通过全部测试与视觉审查的成品代码库。
+### Chrome 136+ 必看
+
+启动 CDP 时必须使用独立 `--user-data-dir`，不要直接调试默认 Chrome Profile。这样既符合新版 Chrome 的远程调试要求，也能降低把日常浏览器会话暴露给本地 Agent 的风险。具体命令见上方 **Quick start** 和 **[SECURITY.md](./SECURITY.md)**。
 
 ---
 
-## 开源协议 (License)
+## License
 
-本项目基于 [MIT License](./LICENSE) 开源。欢迎 Star、Fork 并根据团队工作流定制！
-
----
-
-## 💻 Codex 用户专用快速指引 (Codex Users Quickstart)
-
-如果你是使用 **OpenAI Codex / CLI Agent** 的新用户，请直接参阅：
-👉 **[Codex / CLI 极速上手详细指南](./references/CODEX_GUIDE.md)**
-
-### 3 步启动极速概览：
-1. **启动 Chrome 调试端口 (9222)** 并在浏览器中打开 ChatGPT 或 Claude 会话。
-2. **克隆本技能**：`git clone https://github.com/xulu1998/dual-agent-loop.git`
-3. **在 Codex 中粘贴启动指令**：
-   > *"请读取 `dual-agent-loop/SKILL.md`，你将扮演首席工程师。通过 `dual-agent-loop/scripts/chatgpt_cdp_bridge.py` 联络 Chrome 9222 端口上的 Project Lead。我们的想法是：[描述你的一句话想法]。请引导 Lead 启动 Phase 0 规划并推进端到端闭环研发！"*
-
----
-
-## 💰 极致降本：非对称模型分工架构 (Cost & Asymmetric Model Tiering)
-
-详见专题文档：👉 **[非对称模型分工与 Token 成本极致优化指南](./references/COST_AND_MODEL_TIERS.md)**
-
-### 为什么能大幅节约 Token 花销？
-1. **高级推理模型 (网页端会员固定包月)**：
-   让具有超强思考力的模型（如 **ChatGPT o1 / o3-mini / GPT-4o** 或 **Claude 3.5 Sonnet**）在网页端承担全局规划、架构设计与实机截图审查。这部分工作消耗极度烧脑的推理 Token，但在网页端使用 **$20/月固定订阅，完全没有昂贵的按 Token 计费账单**！
-2. **轻量代码模型 (本地终端极速搬砖)**：
-   编码、读写文件、反复跑测试、输出测试日志是**消耗上下文 Token 最多**的环节。由本地的 **Codex / 轻量模型（如 Haiku / Flash / GPT-4o-mini 或 本地开源模型）** 充当工程师。
-3. **低级模型不会写烂代码的保底机制**：
-   高级模型下发的每道 Directive 已经极其收敛；同时本地有严格的 **A/B 归因测试门禁 (`HEAD-ONLY = 0`)** 和**高级模型审核验收**双重兜底，低级模型无需宏观思考，只需机械执行最小通过逻辑，既快又省！
+MIT License. See [LICENSE](./LICENSE).
