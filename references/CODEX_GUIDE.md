@@ -1,14 +1,42 @@
-# Codex / CLI 快速上手指南
+# Codex / CLI Quick Start
 
-本指南面向使用 **Codex CLI** 或其他本地终端编码 Agent 的用户。目标不是让一个 Agent 同时负责“规划 + 编码 + 自我验收”，而是让本地 Chief Engineer 与浏览器端 Project Lead 建立明确的双角色闭环。
+This guide is for Codex CLI and similar local coding agents acting as the **Chief Engineer** in `dual-agent-loop`.
+
+The workflow separates implementation from independent planning/review. It does not require the browser transport; the included CDP bridge is only one experimental option.
 
 ---
 
-## 1. 准备独立 Chrome Profile 并开启 CDP
+## 1. Install the skill and run its self-tests
 
-`dual-agent-loop` 通过 Chrome DevTools Protocol (CDP) 让本地 Agent 与浏览器中的 ChatGPT / Claude 会话通信。
+From the target project directory:
 
-> **Chrome 136+ 必须注意：** 不要只使用 `--remote-debugging-port=9222` 启动默认 Chrome Profile。请同时指定一个独立的 `--user-data-dir`。这既符合新版 Chrome 的远程调试行为，也能避免把日常浏览器会话直接暴露给本地自动化。
+```bash
+git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-agent-loop
+python -m pip install -r .agents/skills/dual-agent-loop/requirements.txt
+python -m unittest discover \
+  -s .agents/skills/dual-agent-loop/tests \
+  -p "test_*.py" -v
+```
+
+---
+
+## 2. Initialize durable run state
+
+Before the first multi-batch handoff:
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/run_state.py \
+  --state .dual-agent-loop/run-state.json \
+  init --phase phase-0 --project my-project --base-sha "$(git rev-parse HEAD)"
+```
+
+The state file records run/phase/batch/directive/SHA/evidence/verdict history so a browser or terminal restart does not force the agents to reconstruct the current batch from chat memory.
+
+---
+
+## 3. Optional: start the experimental CDP transport
+
+If you choose the browser bridge, use a dedicated Chrome profile.
 
 ### macOS
 
@@ -34,125 +62,126 @@ google-chrome \
   "--user-data-dir=$env:TEMP\dual-agent-loop-chrome"
 ```
 
-启动后，在这个**独立 Profile** 中登录 ChatGPT 或 Claude，并打开作为 Project Lead 的会话。
+Open only the intended Project Lead service in that isolated profile.
 
----
-
-## 2. 安装 Skill 与依赖
-
-在目标项目目录中执行：
-
-```bash
-git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-agent-loop
-python -m pip install -r .agents/skills/dual-agent-loop/requirements.txt
-```
-
-如果你的 Agent 不使用 `.agents/skills/`，也可以克隆到其他目录，只要它能够读取 `SKILL.md`。
-
----
-
-## 3. 先做一次 CDP Smoke Test
-
-### ChatGPT
+Smoke test for ChatGPT:
 
 ```bash
 python .agents/skills/dual-agent-loop/scripts/chatgpt_cdp_bridge.py \
-  --pattern chatgpt.com \
+  --host chatgpt.com \
   --message "Reply with exactly: DUAL_AGENT_LOOP_OK"
 ```
 
-### Claude
+For Claude:
 
 ```bash
 python .agents/skills/dual-agent-loop/scripts/chatgpt_cdp_bridge.py \
-  --pattern claude.ai \
+  --host claude.ai \
   --message "Reply with exactly: DUAL_AGENT_LOOP_OK"
 ```
 
-如果终端收到了浏览器 Agent 的回复，说明传输链路已经工作。
+The bridge deliberately refuses to fall back to unrelated browser pages. It also waits for a response detected after the send instead of returning the previous assistant message.
+
+CDP/DOM automation is experimental and can break when browser applications change. Check the applicable third-party service policies and prefer an approved API/MCP/integration when required by your environment.
 
 ---
 
-## 4. 启动 Codex / CLI Agent
+## 4. Start Codex / your local coding agent
 
-进入项目目录并启动你的本地编码 Agent，例如：
-
-```bash
-codex
-```
-
-然后粘贴下面的启动指令，并替换项目想法：
+A practical launch instruction is:
 
 ```text
-请读取 .agents/skills/dual-agent-loop/SKILL.md。
+Read .agents/skills/dual-agent-loop/SKILL.md and act as the Chief Engineer.
 
-你现在扮演 Chief Engineer（首席工程师）。
-浏览器中已有一个 Project Lead 会话，通过 Chrome CDP 9222 端口与其通信。
+Before doing new work:
+1. inspect the repository and local toolchain;
+2. read or initialize .dual-agent-loop/run-state.json;
+3. confirm the current phase, batch, directive, BASE SHA, and previous verdict;
+4. use the configured Project Lead transport to request/receive a bounded directive;
+5. persist the directive before modifying code;
+6. implement only the current batch scope;
+7. run project-specific build/test/integration/runtime checks;
+8. when comparable baseline/HEAD XML exists, run the strict regression attribution gate;
+9. persist HEAD SHA and evidence artifacts;
+10. send the evidence-backed report to the Project Lead;
+11. persist the Lead verdict before advancing.
 
-项目想法：
-【在这里写你的一句话需求】
-
-从 Phase 0 开始：
-1. 先检查当前仓库和本地环境；
-2. 通过 dual-agent-loop/scripts/chatgpt_cdp_bridge.py 把项目想法和环境摘要发送给 Project Lead；
-3. 请求 Project Lead 输出清晰的 Charter、架构约束和第一个 bounded batch directive；
-4. 收到 Directive 后，只实现当前批次范围；
-5. 运行相应测试、回归归因和证据收集；
-6. 将结果通过 CDP 汇报给 Project Lead；
-7. 未经 Project Lead 验收，不自行宣布整个项目完成。
+Do not self-approve the product and do not silently delete/skip tests to make a gate pass.
 ```
 
 ---
 
-## 5. 接下来会发生什么
+## 5. Strict regression gate
 
-典型闭环如下：
+The gate is stricter than `HEAD-ONLY failures = 0` alone.
+
+It blocks:
+
+```text
+new failures
+changed failure signatures
+missing baseline tests
+newly skipped tests
+duplicate test identifiers
+unknown test states
+```
+
+Example:
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/compare_attribution.py \
+  --baseline artifacts/baseline.xml \
+  --head artifacts/head.xml \
+  --base-sha "$(git rev-parse <baseline-ref>)" \
+  --head-sha "$(git rev-parse HEAD)" \
+  --runner "<runner/version>" \
+  --json artifacts/attribution.json
+```
+
+A baseline failure is non-blocking only if the same test still exists and its captured failure signature is unchanged.
+
+Try the repository's reproducible fixture first:
+
+```bash
+python .agents/skills/dual-agent-loop/scripts/compare_attribution.py \
+  --baseline .agents/skills/dual-agent-loop/examples/regression_gate_demo/baseline.xml \
+  --head .agents/skills/dual-agent-loop/examples/regression_gate_demo/head-good.xml
+```
+
+---
+
+## 6. Typical batch flow
 
 ```text
 Project Lead
-  ↓ 需求 / 架构 / Directive
-Chief Engineer
-  ↓ 修改仓库
-Tests / Logs / Screenshots
+  ↓ bounded directive
+run-state ledger records directive + BASE SHA
   ↓
-Regression attribution / Evidence packet
+Chief Engineer implements
+  ↓
+real project checks + strict attribution + runtime evidence
+  ↓
+run-state ledger records HEAD SHA + evidence
   ↓
 Project Lead review
   ↓
-PASS / REJECT / FREEZE / Next Directive
+PASS / REJECT / BLOCKED / CLOSED
+  ↓
+run-state ledger records verdict
   ↺
 ```
 
-### Phase 0 — Charter & Architecture
-
-Lead 负责明确需求、范围、约束、架构和验收标准。Engineer 负责环境与仓库体检。
-
-### Phase 1 — Walking Skeleton
-
-Engineer 建立最小可运行骨架、测试入口和基线；Lead 审查是否满足首个可运行里程碑。
-
-### Phase 2 — Domain Logic
-
-核心业务逻辑优先建立清晰边界与自动化测试。每个批次都要避免引入新的 HEAD-only failure。
-
-### Phase 3 — Presentation & Integration
-
-接入 UI / API / CLI 层，并提交实际运行证据。涉及视觉界面时，应由项目自身工具生成截图，再使用仓库中的证据工具检查尺寸和整理报告。
-
-### Phase 4 — Hardening & Release
-
-根据项目类型执行性能、仿真、发布和打包检查。并不是所有项目都需要完全相同的压测方法，应以 Project Lead 在 Phase 0/4 下达的验收标准为准。
+The state ledger is intentionally simple. It improves recovery and traceability but is not yet a full autonomous orchestrator.
 
 ---
 
-## 安全提醒
+## Security
 
-CDP 可以访问当前浏览器会话中 Agent 能够看到和操作的内容，因此：
+- Use a dedicated Chrome profile for CDP.
+- Do not expose the debugging port to untrusted networks.
+- Never allow the bridge to fall back to arbitrary tabs.
+- Treat authenticated browser content as sensitive.
+- Only automate services/accounts you are authorized to automate.
+- Check applicable third-party terms/policies.
 
-- 只使用独立 Chrome Profile；
-- 不要使用日常主 Profile；
-- 不要把 9222 端口暴露到不可信网络；
-- 只让你信任的本地 Agent 和脚本连接；
-- 将登录状态、Cookies、聊天内容视为敏感数据。
-
-更多说明见仓库根目录的 `SECURITY.md`。
+See `SECURITY.md` for details.
