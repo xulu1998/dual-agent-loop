@@ -157,3 +157,17 @@ git clone https://github.com/xulu1998/dual-agent-loop.git .agents/skills/dual-ag
 2. **克隆本技能**：`git clone https://github.com/xulu1998/dual-agent-loop.git`
 3. **在 Codex 中粘贴启动指令**：
    > *"请读取 `dual-agent-loop/SKILL.md`，你将扮演首席工程师。通过 `dual-agent-loop/scripts/chatgpt_cdp_bridge.py` 联络 Chrome 9222 端口上的 Project Lead。我们的想法是：[描述你的一句话想法]。请引导 Lead 启动 Phase 0 规划并推进端到端闭环研发！"*
+
+---
+
+## 💰 极致降本：非对称模型分工架构 (Cost & Asymmetric Model Tiering)
+
+详见专题文档：👉 **[非对称模型分工与 Token 成本极致优化指南](./references/COST_AND_MODEL_TIERS.md)**
+
+### 为什么能大幅节约 Token 花销？
+1. **高级推理模型 (网页端会员固定包月)**：
+   让具有超强思考力的模型（如 **ChatGPT o1 / o3-mini / GPT-4o** 或 **Claude 3.5 Sonnet**）在网页端承担全局规划、架构设计与实机截图审查。这部分工作消耗极度烧脑的推理 Token，但在网页端使用 **$20/月固定订阅，完全没有昂贵的按 Token 计费账单**！
+2. **轻量代码模型 (本地终端极速搬砖)**：
+   编码、读写文件、反复跑测试、输出测试日志是**消耗上下文 Token 最多**的环节。由本地的 **Codex / 轻量模型（如 Haiku / Flash / GPT-4o-mini 或 本地开源模型）** 充当工程师。
+3. **低级模型不会写烂代码的保底机制**：
+   高级模型下发的每道 Directive 已经极其收敛；同时本地有严格的 **A/B 归因测试门禁 (`HEAD-ONLY = 0`)** 和**高级模型审核验收**双重兜底，低级模型无需宏观思考，只需机械执行最小通过逻辑，既快又省！
