@@ -6,16 +6,33 @@ Enables an autonomous local agent to communicate directly with an external
 LLM Project Lead in a Chrome browser tab via WebSocket.
 
 Prerequisites:
-    1. Launch Chrome with remote debugging enabled:
+    1. Launch Chrome with remote debugging enabled and a dedicated user-data-dir.
+       Chrome 136+ does not honor --remote-debugging-port against the default
+       Chrome data directory, and using an isolated profile is safer.
+
        macOS:
-         /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222 &
+         /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome \\
+           --remote-debugging-port=9222 \\
+           --user-data-dir="$HOME/.dual-agent-loop/chrome-profile"
+
        Linux:
-         google-chrome --remote-debugging-port=9222 &
-       Windows:
-         chrome.exe --remote-debugging-port=9222
-    2. Open ChatGPT (https://chatgpt.com) or Claude in a tab.
+         google-chrome \\
+           --remote-debugging-port=9222 \\
+           --user-data-dir=/tmp/dual-agent-loop-chrome
+
+       Windows PowerShell:
+         & "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe" `
+           --remote-debugging-port=9222 `
+           "--user-data-dir=$env:TEMP\\dual-agent-loop-chrome"
+
+    2. In that isolated Chrome profile, open ChatGPT (https://chatgpt.com)
+       or Claude (https://claude.ai) in a tab.
     3. Install dependencies:
-       pip install websockets
+       python -m pip install -r requirements.txt
+
+Security:
+    CDP is powerful. Use a dedicated browser profile, do not expose the remote
+    debugging port to untrusted networks, and only connect trusted local agents.
 """
 
 import argparse
@@ -28,7 +45,11 @@ import urllib.request
 try:
     import websockets
 except ImportError:
-    print("Error: 'websockets' library is required. Run: pip install websockets", file=sys.stderr)
+    print(
+        "Error: 'websockets' library is required. "
+        "Run: python -m pip install websockets",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -40,8 +61,8 @@ async def eval_js(ws, js_code: str, msg_id: int = 1):
         "params": {
             "expression": js_code,
             "returnByValue": True,
-            "awaitPromise": True
-        }
+            "awaitPromise": True,
+        },
     }
     await ws.send(json.dumps(msg))
     while True:
@@ -61,18 +82,30 @@ def find_tab(port: int = 9222, url_pattern: str = "chatgpt.com"):
         req = urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5)
         tabs = json.loads(req.read().decode("utf-8"))
     except Exception as e:
-        print(f"[Error] Failed to connect to Chrome at http://127.0.0.1:{port}/json/list: {e}", file=sys.stderr)
-        print("Ensure Chrome is running with --remote-debugging-port=9222.", file=sys.stderr)
+        print(
+            f"[Error] Failed to connect to Chrome at "
+            f"http://127.0.0.1:{port}/json/list: {e}",
+            file=sys.stderr,
+        )
+        print(
+            "Ensure Chrome is running with --remote-debugging-port=9222 "
+            "and a dedicated --user-data-dir.",
+            file=sys.stderr,
+        )
         return None
 
     for tab in tabs:
         if url_pattern in tab.get("url", ""):
             return tab
 
-    # Fallback to any active page if pattern not found
+    # Fallback to any active page if pattern not found.
     for tab in tabs:
         if tab.get("type") == "page":
-            print(f"[Warning] Pattern '{url_pattern}' not found, falling back to tab: {tab.get('title')}", file=sys.stderr)
+            print(
+                f"[Warning] Pattern '{url_pattern}' not found, falling back to tab: "
+                f"{tab.get('title')}",
+                file=sys.stderr,
+            )
             return tab
 
     return None
@@ -83,10 +116,10 @@ async def send_report_and_listen(ws_url: str, report_text: str, timeout_seconds:
     async with websockets.connect(ws_url, max_size=32 * 1024 * 1024) as ws:
         print("[CDP] Connected to browser WebSocket debugger.")
 
-        # Step 1: Inject text into ChatGPT input area
+        # Step 1: Inject text into ChatGPT / Claude input area.
         inject_script = f"""
         (() => {{
-            const el = document.querySelector('#prompt-textarea') || 
+            const el = document.querySelector('#prompt-textarea') ||
                        document.querySelector('[contenteditable="true"]') ||
                        document.querySelector('textarea');
             if (!el) return {{ success: false, error: 'Input field not found' }};
@@ -100,21 +133,19 @@ async def send_report_and_listen(ws_url: str, report_text: str, timeout_seconds:
                 document.execCommand('insertText', false, {json.dumps(report_text)});
             }}
 
-            // Find send button
             const sendBtn = document.querySelector('button[data-testid="send-button"]') ||
                             document.querySelector('button[aria-label*="Send"]') ||
                             document.querySelector('button[aria-label*="发送"]');
-            
+
             if (sendBtn && !sendBtn.disabled) {{
                 sendBtn.click();
                 return {{ success: true, method: 'click_send' }};
-            }} else {{
-                // Fallback Enter key
-                el.dispatchEvent(new KeyboardEvent('keydown', {{
-                    key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
-                }}));
-                return {{ success: true, method: 'enter_key' }};
             }}
+
+            el.dispatchEvent(new KeyboardEvent('keydown', {{
+                key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+            }}));
+            return {{ success: true, method: 'enter_key' }};
         }})()
         """
 
@@ -127,7 +158,7 @@ async def send_report_and_listen(ws_url: str, report_text: str, timeout_seconds:
         print("[CDP] Report delivered. Waiting for Lead response...")
         await asyncio.sleep(4)
 
-        # Step 2: Poll for completion
+        # Step 2: Poll for completion.
         start_time = time.time()
         last_length = 0
         stable_count = 0
@@ -157,12 +188,19 @@ async def send_report_and_listen(ws_url: str, report_text: str, timeout_seconds:
 
             if is_gen:
                 stable_count = 0
-                print(f"[CDP] Generating response... ({current_len} chars)", end="\r", flush=True)
+                print(
+                    f"[CDP] Generating response... ({current_len} chars)",
+                    end="\r",
+                    flush=True,
+                )
             else:
                 if current_len > 0 and current_len == last_length:
                     stable_count += 1
                     if stable_count >= 2:
-                        print(f"\n[CDP] Generation completed. Total {current_len} characters received.")
+                        print(
+                            f"\n[CDP] Generation completed. "
+                            f"Total {current_len} characters received."
+                        )
                         return status.get("text", "")
                 else:
                     stable_count = 0
@@ -176,18 +214,33 @@ async def send_report_and_listen(ws_url: str, report_text: str, timeout_seconds:
 
 def main():
     parser = argparse.ArgumentParser(description="CDP Bridge to ChatGPT / Claude")
-    parser.add_argument("--port", type=int, default=9222, help="Chrome remote debugging port (default: 9222)")
-    parser.add_argument("--pattern", type=str, default="chatgpt.com", help="URL substring to match target tab")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=9222,
+        help="Chrome remote debugging port (default: 9222)",
+    )
+    parser.add_argument(
+        "--pattern",
+        type=str,
+        default="chatgpt.com",
+        help="URL substring to match target tab",
+    )
     parser.add_argument("--file", type=str, help="Path to report markdown file to send")
     parser.add_argument("--message", type=str, help="Direct text message to send")
-    parser.add_argument("--timeout", type=int, default=600, help="Response wait timeout in seconds (default: 600)")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=600,
+        help="Response wait timeout in seconds (default: 600)",
+    )
 
     args = parser.parse_args()
 
     content = ""
     if args.file:
-        with open(args.file, "r", encoding="utf-8") as f:
-            content = f.read()
+        with open(args.file, "r", encoding="utf-8") as handle:
+            content = handle.read()
     elif args.message:
         content = args.message
     else:
@@ -206,7 +259,9 @@ def main():
         print("[Error] Target tab does not expose webSocketDebuggerUrl.", file=sys.stderr)
         sys.exit(1)
 
-    response = asyncio.run(send_report_and_listen(ws_url, content, timeout_seconds=args.timeout))
+    response = asyncio.run(
+        send_report_and_listen(ws_url, content, timeout_seconds=args.timeout)
+    )
     if response:
         print("\n" + "=" * 60)
         print("PROJECT LEAD DIRECTIVE / RESPONSE:")
