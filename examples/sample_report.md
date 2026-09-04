@@ -1,73 +1,89 @@
-# Real-World Evidence Pack Example (真实项目证据包范例)
+# Example evidence pack
+
+This is an illustrative closeout report showing the structure expected from a Chief Engineer. Project names, SHAs, counts, and paths below are examples.
 
 ```markdown
-【PROJECT LEAD DIRECTIVE CLOSEOUT REPORT】
+# PROJECT LEAD DIRECTIVE CLOSEOUT REPORT
 
-TASK:
-ShowShopInvestment — PRODUCT RULE CONTRACT EVIDENCE PACK
+RUN ID: 8cce8f6e-example
+PHASE: phase-2
+BATCH ID: 7
+DIRECTIVE ID: D-007
+TASK: Shop capability rule update
+BASE SHA: b5fa94917d0bbdbfad82baaf1181b296c8f50851
+HEAD SHA: 5ffe0f415f6d7c04426e7cbbcd08deae79aaa0bc
+BRANCH: feat/shop-capability
+STATUS: EVIDENCE READY / AWAITING REVIEW
 
-BASE SHA:
-b5fa94917d0bbdbfad82baaf1181b296c8f50851
+## 1. Scope / implementation
 
-HEAD SHA:
-5ffe0f415f6d7c04426e7cbbcd08deae79aaa0bc
+- Implemented only the three rules named by D-007.
+- No frozen UI or public schema files modified.
+- Changed files:
+  - Core/Phase11ShopVisit.cs
+  - Core/Phase6Gate11Domain.cs
+  - Tests/Editor/Phase16ShopCapabilityProductRuleTests.cs
 
-BRANCH:
-feat/phase-1-core-prototype
+## 2. Project verification
 
-ORIGIN SYNC:
-origin/feat/phase-1-core-prototype @ 5ffe0f4 (SYNCHRONIZED)
+New directive tests:
 
-WORKING TREE:
-git status --short: clean
+- 30 added
+- 30 passed
 
-==================================================
-1. IMPLEMENTATION EVIDENCE
-==================================================
-A. CustomerTraffic (A: Candidate Pool Selection)
-- Location: Core/Phase11ShopVisit.cs (Phase11ShopVisitRules.Build)
-- Evaluates traffic candidates 1..5 using deterministic modulo sequence.
-- InterestScore matching selects best candidate; tie-breaker favors earliest.
-- Monotonic visit serial: only mutates on completed sale or dismissal.
+Full EditMode HEAD report:
 
-B. Workshop (C: Qualification Gate on Canonical RepairCost)
-- Location: Core/Phase6Gate11Domain.cs (Phase6ShopCapabilityRules)
-- Canonical RepairCost bands: Lv1<=16, Lv2<=22, Lv3<=31, Lv4<=44, Lv5=Unrestricted.
-- Zero-mutation guarantee: insufficient level halts immediately with 0 cash change.
+- total: 250
+- passed: 245
+- failed: 3
+- skipped: 2
 
-C. Appraisal (C: 5-Tier Monotonic Information Depth)
-- Location: Core/Phase6Gate11Domain.cs (BuildAppraisalReport)
-- Lv1 Core -> Lv2 Processing -> Lv3 Valuation -> Lv4 Collection -> Lv5 Market.
-- Factual text only; zero RNG, zero extra fees, zero persistent schema changes.
+The repository baseline already contained the same three failing test IDs.
 
-==================================================
-2. 30 NEW UNIT TESTS (ALL 30/30 PASSED)
-==================================================
-File: Tests/Editor/Phase16ShopCapabilityProductRuleTests.cs
-- CT-A through CT-J: Customer traffic candidate selection tests (10/10 PASS)
-- WS-A through WS-J: Workshop qualification and zero-mutation tests (10/10 PASS)
-- AP-A through AP-J: Appraisal monotonic factual report tests (10/10 PASS)
+## 3. Strict baseline-vs-HEAD attribution
 
-==================================================
-3. REGRESSION SUITE & A/B ATTRIBUTION GATE
-==================================================
-- Full EditMode Suite (250 tests total):
-  * Passed: 245
-  * Skipped: 2 (explicit long-running stress tests)
-  * Failed: 3 (all verified pre-existing in baseline XML)
-  * HEAD-ONLY Failures: EXACTLY 0 (GATE PASSED)
+Evidence file: artifacts/editmode-attribution.json
 
-==================================================
-4. VISUAL REVIEW EVIDENCE (720x1280 & 1440x2560)
-==================================================
-- 720x1280 Mobile Viewport: PASS (No text clipping, buttons fully visible)
-- 1440x2560 High-Density Viewport: PASS (No layout breakage)
+- Baseline XML SHA-256: <baseline hash>
+- HEAD XML SHA-256: <head hash>
+- Runner: Unity/Tuanjie NUnit-compatible EditMode runner
+- New failures: 0
+- Changed failure signatures: 0
+- Missing baseline tests: 0
+- New skips: 0
+- Duplicate test IDs: 0
+- Unknown states: 0
+- Identical pre-existing failures: 3
+- Fixed baseline failures: 0
+- New passing tests: 30
 
-==================================================
-5. FROZEN SURFACE INTEGRITY
-==================================================
-- Commercial UI Screens 1–15 & ShowSkillTree: 100% UNTOUCHED.
+STRICT ATTRIBUTION GATE: PASS
 
-Rulebook Section 18.22 updated to: IMPLEMENTED / OWNER REVIEW PENDING
-Awaiting Project Lead signoff to PASS / CLOSED.
+Note: this establishes attribution for the compared test inventory. It does not prove complete software correctness.
+
+## 4. Runtime / visual evidence
+
+Capture mechanism: project engine runtime
+
+- artifacts/screen-720x1280.png — reviewed for target mobile layout
+- artifacts/screen-1440x2560.png — reviewed for target high-density layout
+
+No frozen surface was intentionally changed by this directive.
+
+## 5. Durable handoff state
+
+`.dual-agent-loop/run-state.json` contains:
+
+- current batch: 7
+- directive: D-007
+- BASE SHA / HEAD SHA
+- attribution evidence path
+- screenshot evidence paths
+- status: awaiting-review
+
+## 6. Requested Lead verdict
+
+Please return one explicit verdict:
+
+PASS / REJECT / BLOCKED / CLOSED
 ```
